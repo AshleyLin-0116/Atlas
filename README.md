@@ -1,5 +1,5 @@
-# Pace
-Pace is a personalized, adaptive scheduling assistant that generates personalized study plans and learns from user behavior to generate more realistic daily schedules over time.
+# Atlas
+Atlas is a personalized, adaptive scheduling assistant that generates personalized study plans and learns from user behavior to generate more realistic daily schedules over time.
 
 ## Features
 - Auto-generates daily schedules based on your tasks and availability
