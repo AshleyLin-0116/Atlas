@@ -102,6 +102,7 @@ function App() {
   const [savedTransitionGap, setSavedTransitionGap] = useState(5);
   const [energyPattern, setEnergyPattern] = useState('morning');
   const [savedEnergyPattern, setSavedEnergyPattern] = useState('morning');
+  const [generatedSchedule, setGeneratedSchedule] = useState([]);
 
   function classifyTask(name, difficulty) {
     const deepKeywords = ['study', 'code', 'write', 'program', 'research', 'homework', 'assignment', 'project', 'exam', 'problem set', 'essay', 'lab report'];
@@ -436,6 +437,11 @@ function App() {
   const activeTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
   const hasConflict = userOverrideType !== null && userOverrideType !== autoTaskType;
 
+  function handleGenerateSchedule() {
+    const schedule = generateSchedule();
+    setGeneratedSchedule(schedule);
+  }
+
   return (
     <div>
       <nav>
@@ -473,39 +479,46 @@ function App() {
 
         <section id="schedule">
           <h2>Schedule</h2>
-          {tasks.length === 0 || !wakeTime || !sleepTime ? (
-            <p>Add tasks and set your availability to generate a schedule.</p>
+          {!wakeTime || !sleepTime ? (
+            <p>Set your wake and sleep times in Availability to generate a schedule.</p>
+          ) : tasks.length === 0 ? (
+            <p>Add tasks to generate a schedule.</p>
           ) : (
             <div>
-              {generateSchedule().map((block, index) => (
-                <div key={index}>
-                  {block.type === 'break' ? (
-                    <div>
-                      <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
-                      <p>— Break —</p>
-                    </div>
-                  ) : block.type === 'meal' ? (
-                    <div>
-                      <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
-                      <p>🍽 {block.label}</p>
-                    </div>
-                  ) : block.type === 'commitment' ? (
-                    <div>
-                      <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
-                      <p>📌 {block.label}</p>
-                    </div>
-                  ) : (
-                    <div>
-                      <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
-                      <p>
-                        {block.label}
-                        {block.type === 'peak' ? ' ⭐' : ''}
-                        {block.taskType === 'deep' ? ' — Deep Work' : ' — Light Work'}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              ))}
+              <button type="button" onClick={handleGenerateSchedule}>Generate Schedule</button>
+              {generatedSchedule.length === 0 ? (
+                <p>Click Generate Schedule to see your day.</p>
+              ) : (
+                generatedSchedule.map((block, index) => (
+                  <div key={index}>
+                    {block.type === 'break' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>— Break —</p>
+                      </div>
+                    ) : block.type === 'meal' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>🍽 {block.label}</p>
+                      </div>
+                    ) : block.type === 'commitment' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>📌 {block.label}</p>
+                      </div>
+                    ) : (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>
+                          {block.label}
+                          {block.type === 'peak' ? ' ⭐' : ''}
+                          {block.taskType === 'deep' ? ' — Deep Work' : ' — Light Work'}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
           )}
         </section>
