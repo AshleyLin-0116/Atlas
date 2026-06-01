@@ -84,23 +84,43 @@ function App() {
   const [savedClockFormat, setSavedClockFormat] = useState('12');
   const [commitmentType, setCommitmentType] = useState('');
   const [sleepScheduleSaved, setSleepScheduleSaved] = useState(false);
+  const [userPreference, setUserPreference] = useState(5);
+  const [editingUserPreference, setEditingUserPreference] = useState(false);
+  const [maxBlockLength, setMaxBlockLength] = useState(120);
+  const [morningBuffer, setMorningBuffer] = useState(30);
+  const [nightBuffer, setNightBuffer] = useState(30);
+  const [transitionGap, setTransitionGap] = useState(5);
+  const [energyPattern, setEnergyPattern] = useState('morning');
+  const [taskType, setTaskType] = useState('deep');
+  const [autoTaskType, setAutoTaskType] = useState('deep');
+  const [userOverrideType, setUserOverrideType] = useState(null);
+  const [customDeepKeywords, setCustomDeepKeywords] = useState([]);
+  const [customLightKeywords, setCustomLightKeywords] = useState([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [newKeywordType, setNewKeywordType] = useState('deep');
 
   function handleAddTask(e) {
     e.preventDefault();
+    const finalTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
     const newTask = {
       id: Date.now(),
       taskName,
       deadline,
       difficulty,
       importance,
-      duration
+      userPreference,
+      duration,
+      taskType: finalTaskType
     };
     setTasks([...tasks, newTask]);
     setTaskName('');
     setDeadline('');
     setDifficulty(5);
     setImportance(5);
+    setUserPreference(5);
     setDuration('');
+    setTaskType('deep');
+    setUserOverrideType(null);
   }
 
   function handleDeleteTask(id) {
@@ -188,7 +208,9 @@ function App() {
     }, 0);
 
     const taskTime = tasks.reduce((total, task) => {
-      if (!task.duration) return total;
+      if (!task.duration) {
+        return total;
+      }
       return total + Number(task.duration);
     }, 0);
 
@@ -208,6 +230,225 @@ function App() {
       return;
     }
     setSleepScheduleSaved(true);
+  }
+
+  function calculatePriorityScore(task) {
+    const today = new Date();
+    const deadlineDate = new Date(task.deadline);
+    const daysUntilDeadline = Math.max(0, (deadlineDate - today) / (1000 * 60 * 60 * 24));
+    const urgency = daysUntilDeadline === 0 ? 1 : Math.max(0, 1 - daysUntilDeadline / 30);
+
+    const importance = Number(task.importance) / 10;
+    const userPreference = Number(task.userPreference) / 10;
+    const difficulty = Number(task.difficulty) / 10;
+    const consistency = 0.5;
+
+    const score =
+      0.35 * urgency +
+      0.25 * importance +
+      0.20 * userPreference +
+      0.15 * difficulty +
+      0.05 * consistency;
+
+    return (score * 100).toFixed(1);
+  }
+
+  function generateSchedule() {
+    if (!wakeTime || !sleepTime) {
+      return [];
+    }
+
+    const toMinutes = (time) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    const toTimeString = (minutes) => {
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const wake = toMinutes(wakeTime) + morningBuffer;
+    const sleep = toMinutes(sleepTime) - nightBuffer;
+
+    const blockedRanges = [
+      ...meals.map((meal) => ({
+        start: toMinutes(meal.mealStart),
+        end: toMinutes(meal.mealEnd),
+        label: meal.mealName,
+        type: 'meal'
+      })),
+      ...commitments.map((commitment) => ({
+        start: toMinutes(commitment.commitmentStart),
+        end: toMinutes(commitment.commitmentEnd),
+        label: commitment.commitmentName,
+        type: 'commitment'
+      }))
+    ].sort((a, b) => a.start - b.start);
+
+    const getPeakHours = () => {
+      if (energyPattern === 'morning') {
+        return { start: 6 * 60, end: 12 * 60 };
+      }
+      if (energyPattern === 'afternoon') {
+        return { start: 12 * 60, end: 17 * 60 };
+      }
+      if (energyPattern === 'evening') {
+        return { start: 17 * 60, end: 22 * 60 };
+      }
+      return null;
+    };
+
+    const peakHours = getPeakHours();
+
+    const isInPeak = (time) => {
+      if (!peakHours) {
+        return false;
+      }
+      return time >= peakHours.start && time < peakHours.end;
+    };
+
+    const sortedTasks = [...tasks]
+      .sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
+
+    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep');
+    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light');
+
+    const orderedTasks = [];
+    const maxLen = Math.max(deepTasks.length, lightTasks.length);
+    for (let i = 0; i < maxLen; i++) {
+      if (i < deepTasks.length) {
+        orderedTasks.push(deepTasks[i]);
+      }
+      if (i < lightTasks.length) {
+        orderedTasks.push(lightTasks[i]);
+      }
+    }
+
+    const schedule = [];
+    let currentTime = wake;
+
+    const isBlocked = (start, end) => {
+      return blockedRanges.some(
+        (range) => start < range.end && end > range.start
+      );
+    };
+
+    const getNextFreeTime = (from) => {
+      let time = from;
+      for (const range of blockedRanges) {
+        if (time >= range.start && time < range.end) {
+          schedule.push({
+            start: toTimeString(range.start),
+            end: toTimeString(range.end),
+            label: range.label,
+            type: range.type
+          });
+          time = range.end + transitionGap;
+        }
+      }
+      return time;
+    };
+
+    for (const task of orderedTasks) {
+      let remaining = Number(task.duration);
+      const limit = task.taskType === 'deep' ? maxBlockLength : Infinity;
+      let isFirstBlock = true;
+
+      while (remaining > 0 && currentTime < sleep) {
+        currentTime = getNextFreeTime(currentTime);
+        if (currentTime >= sleep) {
+          break;
+        }
+
+        const blockSize = Math.min(remaining, limit, sleep - currentTime);
+        const blockEnd = currentTime + blockSize;
+
+        if (isBlocked(currentTime, blockEnd)) {
+          currentTime = getNextFreeTime(currentTime);
+          continue;
+        }
+
+        schedule.push({
+          start: toTimeString(currentTime),
+          end: toTimeString(blockEnd),
+          label: task.taskName,
+          type: isInPeak(currentTime) ? 'peak' : 'study',
+          taskType: task.taskType
+        });
+
+        remaining -= blockSize;
+        currentTime = blockEnd;
+
+        if (remaining > 0) {
+          const breakLength = Math.max(15, Math.round(blockSize * 0.15));
+          schedule.push({
+            start: toTimeString(currentTime),
+            end: toTimeString(currentTime + breakLength),
+            label: 'Break',
+            type: 'break'
+          });
+          currentTime += breakLength + transitionGap;
+        } else if (!isFirstBlock || remaining === 0) {
+          currentTime += transitionGap;
+        }
+
+        isFirstBlock = false;
+      }
+    }
+
+    return schedule.sort((a, b) => a.start.localeCompare(b.start));
+  }
+
+  function classifyTask(name, difficulty) {
+    const deepKeywords = ['study', 'code', 'write', 'program', 'research', 'homework', 'assignment', 'project', 'exam', 'problem set', 'essay', 'lab report'];
+    const lightKeywords = ['review', 'flashcard', 'read', 'watch', 'organize', 'plan', 'email', 'admin', 'quiz recap'];
+
+    const lower = name.toLowerCase();
+
+    if (customDeepKeywords.some((k) => lower.includes(k))) {
+      return 'deep';
+    }
+    if (customLightKeywords.some((k) => lower.includes(k))) {
+      return 'light';
+    }
+
+    const hasDeep = deepKeywords.some((k) => lower.includes(k));
+    const hasLight = lightKeywords.some((k) => lower.includes(k));
+
+    if (hasDeep && hasLight) {
+      return 'deep';
+    }
+    if (hasDeep) {
+      return 'deep';
+    }
+    if (hasLight) {
+      return 'light';
+    }
+
+    return Number(difficulty) >= 5 ? 'deep' : 'light';
+  }
+
+  function handleAddKeyword() {
+    if (!newKeyword.trim()) {
+      return;
+    }
+    const keyword = newKeyword.toLowerCase().trim();
+    if (newKeywordType === 'deep') {
+      setCustomDeepKeywords([...customDeepKeywords, keyword]);
+    } else {
+      setCustomLightKeywords([...customLightKeywords, keyword]);
+    }
+    setNewKeyword('');
+  }
+
+  function handleDeleteKeyword(keyword, type) {
+    if (type === 'deep') {
+      setCustomDeepKeywords(customDeepKeywords.filter((k) => k !== keyword));
+    } else {
+      setCustomLightKeywords(customLightKeywords.filter((k) => k !== keyword));
+    }
   }
 
   return (
@@ -246,7 +487,23 @@ function App() {
         </section>
         <section id="schedule">
           <h2>Schedule</h2>
-          <p>Your generated schedule will appear here.</p>
+          {tasks.length === 0 || (!wakeTime || !sleepTime) ? (
+            <p>Add tasks and set your availability to generate a schedule.</p>
+          ) : (
+            <div>
+              {generateSchedule().map((block, index) => (
+                <div key={index}>
+                  <p>
+                    {formatTime(block.start)} — {formatTime(block.end)}
+                  </p>
+                  <p>
+                    {block.label}
+                    {block.type === 'peak' ? ' ⭐' : ''}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
         <section id="tasks">
           <h2>Tasks</h2>
@@ -257,7 +514,11 @@ function App() {
                 type="text"
                 placeholder="e.g. Study for Math exam"
                 value={taskName}
-                onChange={(e) => setTaskName(e.target.value)}
+                onChange={(e) => {
+                  setTaskName(e.target.value);
+                  setAutoTaskType(classifyTask(e.target.value, difficulty));
+                  setUserOverrideType(null);
+                }}
                 required
               />
             </div>
@@ -278,7 +539,11 @@ function App() {
                 max="10"
                 step="0.01"
                 value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value)}
+                onChange={(e) => {
+                  setDifficulty(e.target.value);
+                  setAutoTaskType(classifyTask(taskName, e.target.value));
+                  setUserOverrideType(null);
+                }}
               />
               {editingDifficulty ? (
                 <input
@@ -325,6 +590,43 @@ function App() {
               )}
             </div>
             <div>
+              <label>Personal Priority (1-10): </label>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="0.01"
+                value={userPreference}
+                onChange={(e) => setUserPreference(e.target.value)}
+              />
+              {editingUserPreference ? (
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  step="0.01"
+                  value={userPreference}
+                  onChange={(e) => setUserPreference(parseFloat(e.target.value))}
+                  onBlur={() => setEditingUserPreference(false)}
+                  autoFocus
+                />
+              ) : (
+                <span onClick={() => setEditingUserPreference(true)}>
+                  {userPreference}
+                </span>
+              )}
+            </div>
+            <div>
+              <label>Task Type: </label>
+              <select
+                value={taskType}
+                onChange={(e) => setTaskType(e.target.value)}
+              >
+                <option value="deep">Deep Work</option>
+                <option value="light">Light Work</option>
+              </select>
+            </div>
+            <div>
               <label>Estimated Duration (minutes): </label>
               <input
                 type="number"
@@ -335,6 +637,17 @@ function App() {
                 required
               />
             </div>
+            <div>
+              <p>Atlas thinks this is: <strong>{(userOverrideType || autoTaskType) === 'deep' ? 'Deep Work' : 'Light Work'}</strong></p>
+              <button
+                type="button"
+                onClick={() => setUserOverrideType(
+                  (userOverrideType || autoTaskType) === 'deep' ? 'light' : 'deep'
+                )}
+              >
+                Switch to {(userOverrideType || autoTaskType) === 'deep' ? 'Light Work' : 'Deep Work'}
+              </button>
+            </div>
             <button type="submit">Add Task</button>
           </form>
 
@@ -342,16 +655,21 @@ function App() {
           {tasks.length === 0 ? (
             <p>No tasks added yet.</p>
           ) : (
-            tasks.map((task) => (
-              <div key={task.id}>
-                <strong>{task.taskName}</strong>
-                <p>Deadline: {task.deadline}</p>
-                <p>Difficulty: {task.difficulty}</p>
-                <p>Importance: {task.importance}</p>
-                <p>Duration: {task.duration} minutes</p>
-                <button onClick={() => handleDeleteTask(task.id)}>Delete</button>
-              </div>
-            ))
+            [...tasks]
+              .sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a))
+              .map((task) => (
+                <div key={task.id}>
+                  <strong>{task.taskName}</strong>
+                  <p>Deadline: {task.deadline}</p>
+                  <p>Difficulty: {task.difficulty}</p>
+                  <p>Importance: {task.importance}</p>
+                  <p>Personal Priority: {task.userPreference}</p>
+                  <p>Duration: {task.duration} minutes</p>
+                  <p>Priority Score: {calculatePriorityScore(task)}</p>
+                  <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
+                  <button onClick={() => handleDeleteTask(task.id)}>Delete</button>
+                </div>
+              ))
           )}
         </section>
 
@@ -492,6 +810,101 @@ function App() {
         </section>
         <section id="settings">
           <h2>Settings</h2>
+          <div>
+            <h3>Custom Keywords</h3>
+            <div>
+              <input
+                type="text"
+                placeholder="e.g. chinese"
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+              />
+              <select
+                value={newKeywordType}
+                onChange={(e) => setNewKeywordType(e.target.value)}
+              >
+                <option value="deep">Deep Work</option>
+                <option value="light">Light Work</option>
+              </select>
+              <button type="button" onClick={handleAddKeyword}>Add Keyword</button>
+            </div>
+
+            <h4>Deep Work Keywords</h4>
+            {customDeepKeywords.length === 0 ? (
+              <p>No custom deep work keywords added yet.</p>
+            ) : (
+              customDeepKeywords.map((keyword) => (
+                <div key={keyword}>
+                  <span>{keyword}</span>
+                  <button type="button" onClick={() => handleDeleteKeyword(keyword, 'deep')}>Delete</button>
+                </div>
+              ))
+            )}
+
+            <h4>Light Work Keywords</h4>
+            {customLightKeywords.length === 0 ? (
+              <p>No custom light work keywords added yet.</p>
+            ) : (
+              customLightKeywords.map((keyword) => (
+                <div key={keyword}>
+                  <span>{keyword}</span>
+                  <button type="button" onClick={() => handleDeleteKeyword(keyword, 'light')}>Delete</button>
+                </div>
+              ))
+            )}
+          </div>
+          <div>
+            <label>Max Deep Work Block (minutes): </label>
+            <input
+              type="number"
+              min="30"
+              max="180"
+              value={maxBlockLength}
+              onChange={(e) => setMaxBlockLength(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label>Morning Buffer (minutes): </label>
+            <input
+              type="number"
+              min="0"
+              max="120"
+              value={morningBuffer}
+              onChange={(e) => setMorningBuffer(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label>Night Buffer (minutes): </label>
+            <input
+              type="number"
+              min="0"
+              max="120"
+              value={nightBuffer}
+              onChange={(e) => setNightBuffer(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label>Transition Gap (5–30 minutes): </label>
+            <input
+              type="number"
+              min="5"
+              max="30"
+              value={transitionGap}
+              onChange={(e) => setTransitionGap(Number(e.target.value))}
+            />
+          </div>
+          <div>
+            <label>Energy Pattern: </label>
+            <select
+              value={energyPattern}
+              onChange={(e) => setEnergyPattern(e.target.value)}
+            >
+              <option value="morning">Morning person (6am–12pm)</option>
+              <option value="afternoon">Afternoon person (12pm–5pm)</option>
+              <option value="evening">Evening person (5pm–10pm)</option>
+              <option value="between">Between classes</option>
+            </select>
+          </div>
           <div>
             <label>Clock Format: </label>
             <select
