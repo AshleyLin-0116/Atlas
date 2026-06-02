@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import logo from './Atlas_Logo.png';
 
 function TimePicker({ value, onChange, clockFormat }) {
@@ -104,6 +104,13 @@ function App() {
   const [savedEnergyPattern, setSavedEnergyPattern] = useState('morning');
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
 
+  useEffect(() => {
+    fetch('http://localhost:8000/tasks')
+      .then((res) => res.json())
+      .then((data) => setTasks(data))
+      .catch((err) => console.error('Failed to load tasks:', err));
+  }, []);
+
   function classifyTask(name, difficulty) {
     const deepKeywords = ['study', 'code', 'write', 'program', 'research', 'homework', 'assignment', 'project', 'exam', 'problem set', 'essay', 'lab report'];
     const lightKeywords = ['review', 'flashcard', 'read', 'watch', 'organize', 'plan', 'email', 'admin', 'quiz recap'];
@@ -138,28 +145,42 @@ function App() {
     e.preventDefault();
     const finalTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
     const newTask = {
-      id: Date.now(),
       taskName,
       deadline,
-      difficulty,
-      importance,
-      userPreference,
-      duration,
+      difficulty: Number(difficulty),
+      importance: Number(importance),
+      userPreference: Number(userPreference),
+      duration: Number(duration),
       taskType: finalTaskType
     };
-    setTasks([...tasks, newTask]);
-    setTaskName('');
-    setDeadline('');
-    setDifficulty(5);
-    setImportance(5);
-    setUserPreference(5);
-    setDuration('');
-    setAutoTaskType('deep');
-    setUserOverrideType(null);
+    fetch('http://localhost:8000/tasks', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newTask)
+    })
+      .then((res) => res.json())
+      .then((savedTask) => {
+        setTasks([...tasks, savedTask]);
+        setTaskName('');
+        setDeadline('');
+        setDifficulty(5);
+        setImportance(5);
+        setUserPreference(5);
+        setDuration('');
+        setAutoTaskType('deep');
+        setUserOverrideType(null);
+      })
+      .catch((err) => console.error('Failed to add task:', err));
   }
 
   function handleDeleteTask(id) {
-    setTasks(tasks.filter((task) => task.id !== id));
+    fetch(`http://localhost:8000/tasks/${id}`, {
+      method: 'DELETE'
+    })
+      .then(() => {
+        setTasks(tasks.filter((task) => task.id !== id));
+      })
+      .catch((err) => console.error('Failed to delete task:', err));
   }
 
   function handleAddMeal(e) {
