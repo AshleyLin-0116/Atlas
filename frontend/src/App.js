@@ -103,6 +103,12 @@ function App() {
   const [energyPattern, setEnergyPattern] = useState('morning');
   const [savedEnergyPattern, setSavedEnergyPattern] = useState('morning');
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
+  const [category, setCategory] = useState('');
+  const [feedbackTaskId, setFeedbackTaskId] = useState(null);
+  const [actualDuration, setActualDuration] = useState('');
+  const [actualDifficulty, setActualDifficulty] = useState(5);
+  const [completionStatus, setCompletionStatus] = useState('');
+  const [editingActualDifficulty, setEditingActualDifficulty] = useState(false);
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -151,7 +157,8 @@ function App() {
       importance: Number(importance),
       userPreference: Number(userPreference),
       duration: Number(duration),
-      taskType: finalTaskType
+      taskType: finalTaskType,
+      category
     };
     fetch('http://localhost:8000/tasks', {
       method: 'POST',
@@ -168,6 +175,7 @@ function App() {
         setUserPreference(5);
         setDuration('');
         setAutoTaskType('deep');
+        setCategory('');
         setUserOverrideType(null);
       })
       .catch((err) => console.error('Failed to add task:', err));
@@ -521,6 +529,40 @@ function App() {
     return time;
   }
 
+  function handleSubmitFeedback(taskId) {
+    if (!completionStatus || !actualDuration) {
+      return;
+    }
+    fetch(`http://localhost:8000/tasks/${taskId}/feedback`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actual_duration: Number(actualDuration),
+        actual_difficulty: Number(actualDifficulty),
+        completion_status: completionStatus
+      })
+    })
+      .then((res) => res.json())
+      .then(() => {
+        setTasks(tasks.map((task) => {
+          if (task.id === taskId) {
+            return {
+              ...task,
+              actual_duration: Number(actualDuration),
+              actual_difficulty: Number(actualDifficulty),
+              completion_status: completionStatus
+            };
+          }
+          return task;
+        }));
+        setFeedbackTaskId(null);
+        setActualDuration('');
+        setActualDifficulty(5);
+        setCompletionStatus('');
+      })
+      .catch((err) => console.error('Failed to submit feedback:', err));
+  }
+
   return (
     <div>
       <nav>
@@ -632,6 +674,23 @@ function App() {
                 onChange={(e) => setDeadline(e.target.value)}
                 required
               />
+            </div>
+            <div>
+              <label>Category: </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                required
+              >
+                <option value="">Select category</option>
+                <option value="Coding">Coding</option>
+                <option value="Homework">Homework</option>
+                <option value="Reading">Reading</option>
+                <option value="Studying">Studying</option>
+                <option value="Writing">Writing</option>
+                <option value="Project Work">Project Work</option>
+                <option value="Other">Other</option>
+              </select>
             </div>
             <div>
               <label>Difficulty (1-10): </label>
@@ -758,6 +817,7 @@ function App() {
               .map((task) => (
                 <div key={task.id}>
                   <strong>{task.taskName}</strong>
+                  <p>Category: {task.category}</p>
                   <p>Deadline: {task.deadline}</p>
                   <p>Difficulty: {task.difficulty}</p>
                   <p>Importance: {task.importance}</p>
@@ -765,6 +825,73 @@ function App() {
                   <p>Duration: {task.duration} minutes</p>
                   <p>Priority Score: {calculatePriorityScore(task)}</p>
                   <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
+                  {task.completion_status ? (
+                    <div>
+                      <p>Completion: {task.completion_status}</p>
+                      <p>Actual Duration: {task.actual_duration} minutes</p>
+                      <p>Actual Difficulty: {task.actual_difficulty}</p>
+                    </div>
+                  ) : (
+                    <div>
+                      {feedbackTaskId === task.id ? (
+                        <div>
+                          <h4>How did it go?</h4>
+                          <div>
+                            <label>Did you complete this task? </label>
+                            <select
+                              value={completionStatus}
+                              onChange={(e) => setCompletionStatus(e.target.value)}
+                            >
+                              <option value="">Select...</option>
+                              <option value="Completed">Completed</option>
+                              <option value="Partially Completed">Partially Completed</option>
+                              <option value="Not Completed">Not Completed</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label>How long did it actually take? (minutes): </label>
+                            <input
+                              type="number"
+                              min="1"
+                              value={actualDuration}
+                              onChange={(e) => setActualDuration(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label>How difficult was it actually? (1-10): </label>
+                            <input
+                              type="range"
+                              min="1"
+                              max="10"
+                              step="0.01"
+                              value={actualDifficulty}
+                              onChange={(e) => setActualDifficulty(e.target.value)}
+                            />
+                            {editingActualDifficulty ? (
+                              <input
+                                type="number"
+                                min="1"
+                                max="10"
+                                step="0.01"
+                                value={actualDifficulty}
+                                onChange={(e) => setActualDifficulty(parseFloat(e.target.value))}
+                                onBlur={() => setEditingActualDifficulty(false)}
+                                autoFocus
+                              />
+                            ) : (
+                              <span onClick={() => setEditingActualDifficulty(true)}>
+                                {actualDifficulty}
+                              </span>
+                            )}
+                          </div>
+                          <button type="button" onClick={() => handleSubmitFeedback(task.id)}>Submit Feedback</button>
+                          <button type="button" onClick={() => setFeedbackTaskId(null)}>Cancel</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => setFeedbackTaskId(task.id)}>Mark as Done</button>
+                      )}
+                    </div>
+                  )}
                   <button onClick={() => handleDeleteTask(task.id)}>Delete</button>
                 </div>
               ))
