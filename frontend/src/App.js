@@ -329,6 +329,31 @@ function App() {
       }))
     ].sort((a, b) => a.start - b.start);
 
+    const schedule = [];
+
+    schedule.push({
+      start: toTimeString(toMinutes(wakeTime)),
+      end: toTimeString(wake),
+      label: 'Morning routine',
+      type: 'buffer'
+    });
+
+    for (const range of blockedRanges) {
+      schedule.push({
+        start: toTimeString(range.start),
+        end: toTimeString(range.end),
+        label: range.label,
+        type: range.type
+      });
+    }
+
+    schedule.push({
+      start: toTimeString(toMinutes(sleepTime) - savedNightBuffer),
+      end: toTimeString(toMinutes(sleepTime)),
+      label: 'Wind down',
+      type: 'buffer'
+    });
+
     const getPeakHours = () => {
       if (savedEnergyPattern === 'morning') {
         return { start: 6 * 60, end: 12 * 60 };
@@ -351,6 +376,12 @@ function App() {
       return time >= peakHours.start && time < peakHours.end;
     };
 
+    const isBlocked = (start, end) => {
+      return blockedRanges.some(
+        (range) => start < range.end && end > range.start
+      );
+    };
+
     const sortedTasks = [...tasks]
       .sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
     const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep');
@@ -366,45 +397,30 @@ function App() {
       }
     }
 
-    const schedule = [];
     let currentTime = wake;
-
-    const isBlocked = (start, end) => {
-      return blockedRanges.some(
-        (range) => start < range.end && end > range.start
-      );
-    };
-
-    const getNextFreeTime = (from) => {
-      let time = from;
-      for (const range of blockedRanges) {
-        if (time >= range.start && time < range.end) {
-          schedule.push({
-            start: toTimeString(range.start),
-            end: toTimeString(range.end),
-            label: range.label,
-            type: range.type
-          });
-          time = range.end + savedTransitionGap;
-        }
-      }
-      return time;
-    };
 
     for (const task of orderedTasks) {
       let remaining = Number(task.duration);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
       let isFirstBlock = true;
 
+      let safetyCounter = 0;
       while (remaining > 0 && currentTime < sleep) {
-        currentTime = getNextFreeTime(currentTime);
+        safetyCounter++;
+        if (safetyCounter > 1000) {
+          break;
+        }
+        currentTime = getNextFreeTime(currentTime, blockedRanges, schedule, toTimeString, savedTransitionGap);
         if (currentTime >= sleep) {
           break;
         }
         const blockSize = Math.min(remaining, limit, sleep - currentTime);
+        if (blockSize <= 0) {
+          break;
+        }
         const blockEnd = currentTime + blockSize;
         if (isBlocked(currentTime, blockEnd)) {
-          currentTime = getNextFreeTime(currentTime);
+          currentTime = blockEnd;
           continue;
         }
         schedule.push({
@@ -418,13 +434,22 @@ function App() {
         currentTime = blockEnd;
         if (remaining > 0) {
           const breakLength = Math.max(15, Math.round(blockSize * 0.15));
-          schedule.push({
-            start: toTimeString(currentTime),
-            end: toTimeString(currentTime + breakLength),
-            label: 'Break',
-            type: 'break'
-          });
-          currentTime += breakLength + savedTransitionGap;
+          const breakStart = currentTime;
+          const breakEnd = breakStart + breakLength;
+          const breakOverlaps = blockedRanges.some(
+            (range) => breakStart < range.end && breakEnd > range.start
+          );
+          if (!breakOverlaps) {
+            schedule.push({
+              start: toTimeString(currentTime),
+              end: toTimeString(breakEnd),
+              label: 'Break',
+              type: 'break'
+            });
+            currentTime = breakEnd + savedTransitionGap;
+          } else {
+            currentTime = getNextFreeTime(currentTime, blockedRanges, schedule, toTimeString, savedTransitionGap);
+          }
         } else if (!isFirstBlock || remaining === 0) {
           currentTime += savedTransitionGap;
         }
@@ -440,6 +465,39 @@ function App() {
   function handleGenerateSchedule() {
     const schedule = generateSchedule();
     setGeneratedSchedule(schedule);
+  }
+
+  function getBlockDuration(start, end) {
+    const toMinutes = (time) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const diff = toMinutes(end) - toMinutes(start);
+    const hours = Math.floor(diff / 60);
+    const minutes = diff % 60;
+    if (hours === 0) {
+      return `${minutes} minutes`;
+    }
+    if (minutes === 0) {
+      return `${hours} hour${hours > 1 ? 's' : ''}`;
+    }
+    return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} minutes`;
+  }
+
+  function getNextFreeTime(from, blockedRanges, schedule, toTimeString, transitionGap) {
+    let time = from;
+    for (const range of blockedRanges) {
+      if (time >= range.start && time < range.end) {
+        schedule.push({
+          start: toTimeString(range.start),
+          end: toTimeString(range.end),
+          label: range.label,
+          type: range.type
+        });
+        time = range.end + transitionGap;
+      }
+    }
+    return time;
   }
 
   return (
@@ -493,22 +551,27 @@ function App() {
                   <div key={index}>
                     {block.type === 'break' ? (
                       <div>
-                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>— Break —</p>
                       </div>
                     ) : block.type === 'meal' ? (
                       <div>
-                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>🍽 {block.label}</p>
                       </div>
                     ) : block.type === 'commitment' ? (
                       <div>
-                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>📌 {block.label}</p>
+                      </div>
+                    ) : block.type === 'buffer' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
+                        <p>🌅 {block.label}</p>
                       </div>
                     ) : (
                       <div>
-                        <p>{formatTime(block.start)} — {formatTime(block.end)}</p>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>
                           {block.label}
                           {block.type === 'peak' ? ' ⭐' : ''}
@@ -788,6 +851,7 @@ function App() {
               <select
                 value={commitmentType}
                 onChange={(e) => setCommitmentType(e.target.value)}
+                required
               >
                 <option value="">Select type</option>
                 <option value="Job/Internship">Job/Internship</option>
