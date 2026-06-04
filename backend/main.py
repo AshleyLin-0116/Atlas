@@ -75,6 +75,8 @@ class TaskFeedback(BaseModel):
     actual_duration: float
     actual_difficulty: float
     completion_status: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
 
 @app.get("/")
 def read_root():
@@ -123,12 +125,20 @@ def submit_feedback(task_id: int, feedback: TaskFeedback):
         conn.execute(
             """INSERT INTO task_history 
             (task_id, taskName, category, estimated_duration, actual_duration, 
-            planned_difficulty, actual_difficulty, completion_status, completed_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+            planned_difficulty, actual_difficulty, completion_status, 
+            start_time, end_time, completed_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
             (task_id, task['taskName'], task['category'], task['duration'],
             feedback.actual_duration, task['difficulty'], feedback.actual_difficulty,
-            feedback.completion_status)
+            feedback.completion_status, feedback.start_time, feedback.end_time)
         )
     conn.commit()
     conn.close()
     return {"message": "Feedback saved"}
+
+@app.get("/history")
+def get_history():
+    conn = get_db()
+    history = conn.execute("SELECT * FROM task_history ORDER BY completed_at DESC").fetchall()
+    conn.close()
+    return [dict(h) for h in history]

@@ -109,12 +109,21 @@ function App() {
   const [actualDifficulty, setActualDifficulty] = useState(5);
   const [completionStatus, setCompletionStatus] = useState('');
   const [editingActualDifficulty, setEditingActualDifficulty] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [activeTaskId, setActiveTaskId] = useState(null);
+  const [taskStartTime, setTaskStartTime] = useState(null);
+  const [manualStartTime, setManualStartTime] = useState('');
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
       .then((res) => res.json())
       .then((data) => setTasks(data))
       .catch((err) => console.error('Failed to load tasks:', err));
+
+    fetch('http://localhost:8000/history')
+      .then((res) => res.json())
+      .then((data) => setHistory(data))
+      .catch((err) => console.error('Failed to load history:', err));
   }, []);
 
   function classifyTask(name, difficulty) {
@@ -539,7 +548,9 @@ function App() {
       body: JSON.stringify({
         actual_duration: Number(actualDuration),
         actual_difficulty: Number(actualDifficulty),
-        completion_status: completionStatus
+        completion_status: completionStatus,
+        start_time: taskStartTime ? taskStartTime.toISOString() : null,
+        end_time: new Date().toISOString()
       })
     })
       .then((res) => res.json())
@@ -559,8 +570,117 @@ function App() {
         setActualDuration('');
         setActualDifficulty(5);
         setCompletionStatus('');
+        setManualStartTime('');
+        fetch('http://localhost:8000/history')
+          .then((res) => res.json())
+          .then((data) => setHistory(data))
+          .catch((err) => console.error('Failed to reload history:', err));
       })
       .catch((err) => console.error('Failed to submit feedback:', err));
+  }
+
+  function calculateAccuracy(estimated, actual) {
+    if (!estimated || !actual || actual === 0) {
+      return null;
+    }
+    const accuracy = (estimated / actual) * 100;
+    return Math.min(accuracy, 100).toFixed(1);
+  }
+
+  function calculateCategoryStats() {
+    const categories = {};
+    history.forEach((h) => {
+      if (!h.category) {
+        return;
+      }
+      if (!categories[h.category]) {
+        categories[h.category] = {
+          count: 0,
+          totalEstimated: 0,
+          totalActual: 0,
+          totalAccuracy: 0,
+          completed: 0,
+          notCompleted: 0,
+          partiallyCompleted: 0
+        };
+      }
+      const cat = categories[h.category];
+      cat.count++;
+      cat.totalEstimated += h.estimated_duration || 0;
+      cat.totalActual += h.actual_duration || 0;
+      if (h.estimated_duration && h.actual_duration) {
+        cat.totalAccuracy += Math.min((h.estimated_duration / h.actual_duration) * 100, 100);
+      }
+      if (h.completion_status === 'Completed') {
+        cat.completed++;
+      } else if (h.completion_status === 'Partially Completed') {
+        cat.partiallyCompleted++;
+      } else if (h.completion_status === 'Not Completed') {
+        cat.notCompleted++;
+      }
+    });
+    return categories;
+  }
+
+  function handleStartTask(taskId) {
+    setActiveTaskId(taskId);
+    setTaskStartTime(new Date());
+  }
+
+  function handleStopTask() {
+    if (!taskStartTime) {
+      return;
+    }
+    const endTime = new Date();
+    const elapsedMinutes = Math.round((endTime - taskStartTime) / 60000);
+    setActualDuration(elapsedMinutes);
+    setTaskStartTime(null);
+  }
+
+  function calculateProductiveTime() {
+    const periods = {
+      'Early Morning (12am–6am)': { start: 0, end: 6, completed: 0, total: 0 },
+      'Morning (6am–12pm)': { start: 6, end: 12, completed: 0, total: 0 },
+      'Afternoon (12pm–5pm)': { start: 12, end: 17, completed: 0, total: 0 },
+      'Evening (5pm–10pm)': { start: 17, end: 22, completed: 0, total: 0 },
+      'Night (10pm–12am)': { start: 22, end: 24, completed: 0, total: 0 }
+    };
+
+    history.forEach((h) => {
+      if (!h.start_time) {
+        return;
+      }
+      const startHour = new Date(h.start_time).getHours();
+      for (const [data] of Object.entries(periods)) {
+        if (startHour >= data.start && startHour < data.end) {
+          data.total++;
+          if (h.completion_status === 'Completed') {
+            data.completed++;
+          }
+          break;
+        }
+      }
+    });
+
+    return periods;
+  }
+
+  function getMostProductivePeriod() {
+    const periods = calculateProductiveTime();
+    let bestPeriod = null;
+    let bestRate = -1;
+
+    for (const [period, data] of Object.entries(periods)) {
+      if (data.total === 0) {
+        continue;
+      }
+      const rate = (data.completed / data.total) * 100;
+      if (rate > bestRate) {
+        bestRate = rate;
+        bestPeriod = period;
+      }
+    }
+    return { period: bestPeriod, rate: bestRate.toFixed(1) };
   }
 
   return (
@@ -849,13 +969,43 @@ function App() {
                             </select>
                           </div>
                           <div>
-                            <label>How long did it actually take? (minutes): </label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={actualDuration}
-                              onChange={(e) => setActualDuration(e.target.value)}
-                            />
+                            {taskStartTime ? (
+                              <p>Timer recorded — actual duration: {actualDuration} minutes (you can adjust if needed)</p>
+                            ) : (
+                              <div>
+                                <p>Did you use the timer? If not, either enter when you started or how long it took.</p>
+                                <div>
+                                  <label>When did you start? </label>
+                                  <TimePicker
+                                    value={manualStartTime}
+                                    onChange={(time) => {
+                                      setManualStartTime(time);
+                                      if (time) {
+                                        const toMinutes = (t) => {
+                                          const [h, m] = t.split(':').map(Number);
+                                          return h * 60 + m;
+                                        };
+                                        const now = new Date();
+                                        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+                                        const startMinutes = toMinutes(time);
+                                        const elapsed = Math.max(1, currentMinutes - startMinutes);
+                                        setActualDuration(elapsed);
+                                      }
+                                    }}
+                                    clockFormat={savedClockFormat}
+                                  />
+                                </div>
+                                <div>
+                                  <label>Or enter duration manually (minutes): </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    value={actualDuration}
+                                    onChange={(e) => setActualDuration(e.target.value)}
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <label>How difficult was it actually? (1-10): </label>
@@ -888,7 +1038,39 @@ function App() {
                           <button type="button" onClick={() => setFeedbackTaskId(null)}>Cancel</button>
                         </div>
                       ) : (
-                        <button type="button" onClick={() => setFeedbackTaskId(task.id)}>Mark as Done</button>
+                        <div>
+                          {activeTaskId === task.id ? (
+                            <div>
+                              <p>⏱ Task in progress...</p>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleStopTask();
+                                  setFeedbackTaskId(task.id);
+                                  setActiveTaskId(null);
+                                }}
+                              >
+                                Stop Timer
+                              </button>
+                            </div>
+                          ) : (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => handleStartTask(task.id)}
+                                disabled={activeTaskId !== null}
+                              >
+                                Start Task
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setFeedbackTaskId(task.id)}
+                              >
+                                Mark as Done
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -1032,7 +1214,89 @@ function App() {
 
         <section id="progress">
           <h2>Progress</h2>
-          <p>Your weekly summary and insights will appear here.</p>
+          {history.length === 0 ? (
+            <p>No completed tasks yet. Complete a task to see your history.</p>
+          ) : (
+            <div>
+              <h3>Summary</h3>
+              <p>Total tasks completed: {history.filter((h) => h.completion_status === 'Completed').length}</p>
+              <p>Total tasks partially completed: {history.filter((h) => h.completion_status === 'Partially Completed').length}</p>
+              <p>Total tasks not completed: {history.filter((h) => h.completion_status === 'Not Completed').length}</p>
+              <p>Average actual duration: {
+                history.length > 0
+                  ? (history.reduce((sum, h) => sum + (h.actual_duration || 0), 0) / history.length).toFixed(1)
+                  : 0
+              } minutes</p>
+              <p>Overall accuracy: {
+                history.filter((h) => h.estimated_duration && h.actual_duration).length > 0
+                  ? (history
+                      .filter((h) => h.estimated_duration && h.actual_duration)
+                      .reduce((sum, h) => sum + Math.min((h.estimated_duration / h.actual_duration) * 100, 100), 0)
+                      / history.filter((h) => h.estimated_duration && h.actual_duration).length
+                    ).toFixed(1)
+                  : 0
+              }%</p>
+
+              <h3>Task History</h3>
+              {history.map((h) => (
+                <div key={h.id}>
+                  <strong>{h.taskName}</strong>
+                  <p>Category: {h.category}</p>
+                  <p>Status: {h.completion_status}</p>
+                  <p>Estimated: {h.estimated_duration} minutes</p>
+                  <p>Actual: {h.actual_duration} minutes</p>
+                  <p>Accuracy: {calculateAccuracy(h.estimated_duration, h.actual_duration)}%</p>
+                  <p>Planned difficulty: {h.planned_difficulty}</p>
+                  <p>Actual difficulty: {h.actual_difficulty}</p>
+                  <p>Completed at: {h.completed_at}</p>
+                </div>
+              ))}
+
+              <h3>Category Breakdown</h3>
+              {Object.keys(calculateCategoryStats()).length === 0 ? (
+                <p>No category data yet.</p>
+              ) : (
+                Object.entries(calculateCategoryStats()).map(([category, stats]) => (
+                  <div key={category}>
+                    <strong>{category}</strong>
+                    <p>Tasks tracked: {stats.count}</p>
+                    <p>Average estimated duration: {(stats.totalEstimated / stats.count).toFixed(1)} minutes</p>
+                    <p>Average actual duration: {(stats.totalActual / stats.count).toFixed(1)} minutes</p>
+                    <p>Average accuracy: {(stats.totalAccuracy / stats.count).toFixed(1)}%</p>
+                    <p>Completed: {stats.completed} | Partially: {stats.partiallyCompleted} | Not completed: {stats.notCompleted}</p>
+                  </div>
+                ))
+              )}
+
+              <h3>Productive Time Analysis</h3>
+              {history.filter((h) => h.start_time).length === 0 ? (
+                <p>No timer data yet. Use the Start Task button to track productive time.</p>
+              ) : (
+                <div>
+                  {(() => {
+                    const best = getMostProductivePeriod();
+                    if (best.period) {
+                      return <p>Most productive period: <strong>{best.period}</strong> ({best.rate}% completion rate)</p>;
+                    }
+                    return null;
+                  })()}
+                  {Object.entries(calculateProductiveTime()).map(([period, data]) => {
+                    if (data.total === 0) {
+                      return null;
+                    }
+                    return (
+                      <div key={period}>
+                        <strong>{period}</strong>
+                        <p>Tasks attempted: {data.total}</p>
+                        <p>Tasks completed: {data.completed}</p>
+                        <p>Completion rate: {((data.completed / data.total) * 100).toFixed(1)}%</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section id="settings">
