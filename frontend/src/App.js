@@ -113,6 +113,28 @@ function App() {
   const [activeTaskId, setActiveTaskId] = useState(null);
   const [taskStartTime, setTaskStartTime] = useState(null);
   const [manualStartTime, setManualStartTime] = useState('');
+  const [commuteTime, setCommuteTime] = useState(0);
+  const [mealCommuteTime, setMealCommuteTime] = useState(0);
+  const [editingTaskId, setEditingTaskId] = useState(null);
+  const [editTaskName, setEditTaskName] = useState('');
+  const [editDeadline, setEditDeadline] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editDifficulty, setEditDifficulty] = useState(5);
+  const [editImportance, setEditImportance] = useState(5);
+  const [editUserPreference, setEditUserPreference] = useState(5);
+  const [editDuration, setEditDuration] = useState('');
+  const [editTaskType, setEditTaskType] = useState('deep');
+  const [editingMealId, setEditingMealId] = useState(null);
+  const [editMealName, setEditMealName] = useState('');
+  const [editMealStart, setEditMealStart] = useState('');
+  const [editMealEnd, setEditMealEnd] = useState('');
+  const [editMealCommuteTime, setEditMealCommuteTime] = useState(0);
+  const [editingCommitmentId, setEditingCommitmentId] = useState(null);
+  const [editCommitmentName, setEditCommitmentName] = useState('');
+  const [editCommitmentStart, setEditCommitmentStart] = useState('');
+  const [editCommitmentEnd, setEditCommitmentEnd] = useState('');
+  const [editCommitmentType, setEditCommitmentType] = useState('');
+  const [editCommitmentCommuteTime, setEditCommitmentCommuteTime] = useState(0);
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -235,7 +257,7 @@ function App() {
 
   function handleAddMeal(e) {
     e.preventDefault();
-    const newMeal = { mealName, mealStart, mealEnd };
+    const newMeal = { mealName, mealStart, mealEnd, commuteTime: mealCommuteTime };
     fetch('http://localhost:8000/meals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -247,6 +269,7 @@ function App() {
         setMealName('');
         setMealStart('');
         setMealEnd('');
+        setMealCommuteTime(0);
       })
       .catch((err) => console.error('Failed to add meal:', err));
   }
@@ -259,7 +282,7 @@ function App() {
 
   function handleAddCommitment(e) {
     e.preventDefault();
-    const newCommitment = { commitmentName, commitmentStart, commitmentEnd, commitmentType };
+    const newCommitment = { commitmentName, commitmentStart, commitmentEnd, commitmentType, commuteTime };
     fetch('http://localhost:8000/commitments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,6 +295,7 @@ function App() {
         setCommitmentStart('');
         setCommitmentEnd('');
         setCommitmentType('');
+        setCommuteTime(0);
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -403,18 +427,40 @@ function App() {
     const wake = toMinutes(wakeTime) + savedMorningBuffer;
     const sleep = toMinutes(sleepTime) - savedNightBuffer;
     const blockedRanges = [
-      ...meals.map((meal) => ({
-        start: toMinutes(meal.mealStart),
-        end: toMinutes(meal.mealEnd),
-        label: meal.mealName,
-        type: 'meal'
-      })),
-      ...commitments.map((commitment) => ({
-        start: toMinutes(commitment.commitmentStart),
-        end: toMinutes(commitment.commitmentEnd),
-        label: commitment.commitmentName,
-        type: 'commitment'
-      }))
+      ...meals.flatMap((meal) => {
+        const blocks = [{
+          start: toMinutes(meal.mealStart),
+          end: toMinutes(meal.mealEnd),
+          label: meal.mealName,
+          type: 'meal'
+        }];
+        if (meal.commuteTime > 0) {
+          blocks.unshift({
+            start: toMinutes(meal.mealStart) - meal.commuteTime,
+            end: toMinutes(meal.mealStart),
+            label: `Commute to ${meal.mealName}`,
+            type: 'commute'
+          });
+        }
+        return blocks;
+      }),
+      ...commitments.flatMap((commitment) => {
+        const blocks = [{
+          start: toMinutes(commitment.commitmentStart),
+          end: toMinutes(commitment.commitmentEnd),
+          label: commitment.commitmentName,
+          type: 'commitment'
+        }];
+        if (commitment.commuteTime > 0) {
+          blocks.unshift({
+            start: toMinutes(commitment.commitmentStart) - commitment.commuteTime,
+            end: toMinutes(commitment.commitmentStart),
+            label: `Commute to ${commitment.commitmentName}`,
+            type: 'commute'
+          });
+        }
+        return blocks;
+      })
     ].sort((a, b) => a.start - b.start);
 
     const schedule = [];
@@ -739,6 +785,106 @@ function App() {
       .catch((err) => console.error('Failed to save setting:', err));
   }
 
+  function handleEditTask(task) {
+    setEditingTaskId(task.id);
+    setEditTaskName(task.taskName);
+    setEditDeadline(task.deadline);
+    setEditCategory(task.category || '');
+    setEditDifficulty(task.difficulty);
+    setEditImportance(task.importance);
+    setEditUserPreference(task.userPreference);
+    setEditDuration(task.duration);
+    setEditTaskType(task.taskType);
+  }
+
+  function handleUpdateTask(taskId) {
+    console.log('Updating task:', taskId);
+    const updatedTask = {
+      taskName: editTaskName,
+      deadline: editDeadline,
+      difficulty: Number(editDifficulty),
+      importance: Number(editImportance),
+      userPreference: Number(editUserPreference),
+      duration: Number(editDuration),
+      taskType: editTaskType,
+      category: editCategory
+    };
+    fetch(`http://localhost:8000/tasks/${taskId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedTask)
+    })
+      .then((res) => res.json())
+      .then((saved) => {
+        setTasks(tasks.map((task) => {
+          if (task.id === taskId) {
+            return { ...task, ...saved };
+          }
+          return task;
+        }));
+        setEditingTaskId(null);
+      })
+      .catch((err) => console.error('Failed to update task:', err));
+  }
+
+  function handleEditMeal(meal) {
+    setEditingMealId(meal.id);
+    setEditMealName(meal.mealName);
+    setEditMealStart(meal.mealStart);
+    setEditMealEnd(meal.mealEnd);
+    setEditMealCommuteTime(meal.commuteTime || 0);
+  }
+
+  function handleUpdateMeal(mealId) {
+    const updatedMeal = {
+      mealName: editMealName,
+      mealStart: editMealStart,
+      mealEnd: editMealEnd,
+      commuteTime: editMealCommuteTime
+    };
+    fetch(`http://localhost:8000/meals/${mealId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedMeal)
+    })
+      .then((res) => res.json())
+      .then((saved) => {
+        setMeals(meals.map((meal) => meal.id === mealId ? saved : meal));
+        setEditingMealId(null);
+      })
+      .catch((err) => console.error('Failed to update meal:', err));
+  }
+
+  function handleEditCommitment(commitment) {
+    setEditingCommitmentId(commitment.id);
+    setEditCommitmentName(commitment.commitmentName);
+    setEditCommitmentStart(commitment.commitmentStart);
+    setEditCommitmentEnd(commitment.commitmentEnd);
+    setEditCommitmentType(commitment.commitmentType || '');
+    setEditCommitmentCommuteTime(commitment.commuteTime || 0);
+  }
+
+  function handleUpdateCommitment(commitmentId) {
+    const updatedCommitment = {
+      commitmentName: editCommitmentName,
+      commitmentStart: editCommitmentStart,
+      commitmentEnd: editCommitmentEnd,
+      commitmentType: editCommitmentType,
+      commuteTime: editCommitmentCommuteTime
+    };
+    fetch(`http://localhost:8000/commitments/${commitmentId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedCommitment)
+    })
+      .then((res) => res.json())
+      .then((saved) => {
+        setCommitments(commitments.map((c) => c.id === commitmentId ? saved : c));
+        setEditingCommitmentId(null);
+      })
+      .catch((err) => console.error('Failed to update commitment:', err));
+  }
+
   return (
     <div>
       <nav>
@@ -802,6 +948,11 @@ function App() {
                       <div>
                         <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>📌 {block.label}</p>
+                      </div>
+                    ) : block.type === 'commute' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
+                        <p>🚗 {block.label}</p>
                       </div>
                     ) : block.type === 'buffer' ? (
                       <div>
@@ -1130,7 +1281,105 @@ function App() {
                       )}
                     </div>
                   )}
-                  <button onClick={() => handleDeleteTask(task.id)}>Delete</button>
+                  {editingTaskId === task.id ? (
+                    <div>
+                      <h4>Edit Task</h4>
+                      <div>
+                        <label>Task Name: </label>
+                        <input
+                          type="text"
+                          value={editTaskName}
+                          onChange={(e) => setEditTaskName(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label>Deadline: </label>
+                        <input
+                          type="date"
+                          value={editDeadline}
+                          onChange={(e) => setEditDeadline(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label>Category: </label>
+                        <select
+                          value={editCategory}
+                          onChange={(e) => setEditCategory(e.target.value)}
+                        >
+                          <option value="">Select category</option>
+                          <option value="Coding">Coding</option>
+                          <option value="Homework">Homework</option>
+                          <option value="Reading">Reading</option>
+                          <option value="Studying">Studying</option>
+                          <option value="Writing">Writing</option>
+                          <option value="Project Work">Project Work</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label>Difficulty (1-10): </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          step="0.01"
+                          value={editDifficulty}
+                          onChange={(e) => setEditDifficulty(e.target.value)}
+                        />
+                        <span>{editDifficulty}</span>
+                      </div>
+                      <div>
+                        <label>Importance (1-10): </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          step="0.01"
+                          value={editImportance}
+                          onChange={(e) => setEditImportance(e.target.value)}
+                        />
+                        <span>{editImportance}</span>
+                      </div>
+                      <div>
+                        <label>Personal Priority (1-10): </label>
+                        <input
+                          type="range"
+                          min="1"
+                          max="10"
+                          step="0.01"
+                          value={editUserPreference}
+                          onChange={(e) => setEditUserPreference(e.target.value)}
+                        />
+                        <span>{editUserPreference}</span>
+                      </div>
+                      <div>
+                        <label>Estimated Duration (minutes): </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={editDuration}
+                          onChange={(e) => setEditDuration(e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <label>Task Type: </label>
+                        <select
+                          value={editTaskType}
+                          onChange={(e) => setEditTaskType(e.target.value)}
+                        >
+                          <option value="deep">Deep Work</option>
+                          <option value="light">Light Work</option>
+                        </select>
+                      </div>
+                      <button type="button" onClick={() => handleUpdateTask(task.id)}>Save Changes</button>
+                      <button type="button" onClick={() => setEditingTaskId(null)}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div>
+                      <button type="button" onClick={() => handleEditTask(task)}>Edit</button>
+                      <button type="button" onClick={() => handleDeleteTask(task.id)}>Delete</button>
+                    </div>
+                  )}
                 </div>
               ))
           )}
@@ -1189,6 +1438,16 @@ function App() {
                 clockFormat={savedClockFormat}
               />
             </div>
+            <div>
+              <label>Commute time (minutes, optional): </label>
+              <input
+                type="number"
+                min="0"
+                max="120"
+                value={mealCommuteTime}
+                onChange={(e) => setMealCommuteTime(Number(e.target.value))}
+              />
+            </div>
             <button type="submit">Add Meal</button>
           </form>
 
@@ -1198,9 +1457,57 @@ function App() {
           ) : (
             meals.map((meal) => (
               <div key={meal.id}>
-                <strong>{meal.mealName}</strong>
-                <p>{formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
-                <button onClick={() => handleDeleteMeal(meal.id)}>Delete</button>
+                {editingMealId === meal.id ? (
+                  <div>
+                    <h4>Edit Meal</h4>
+                    <div>
+                      <label>Meal name: </label>
+                      <input
+                        type="text"
+                        value={editMealName}
+                        onChange={(e) => setEditMealName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label>Start time: </label>
+                      <TimePicker
+                        value={editMealStart}
+                        onChange={setEditMealStart}
+                        clockFormat={savedClockFormat}
+                      />
+                    </div>
+                    <div>
+                      <label>End time: </label>
+                      <TimePicker
+                        value={editMealEnd}
+                        onChange={setEditMealEnd}
+                        clockFormat={savedClockFormat}
+                      />
+                    </div>
+                    <div>
+                      <label>Commute time (minutes): </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="120"
+                        value={editMealCommuteTime}
+                        onChange={(e) => setEditMealCommuteTime(Number(e.target.value))}
+                      />
+                    </div>
+                    <button type="button" onClick={() => handleUpdateMeal(meal.id)}>Save Changes</button>
+                    <button type="button" onClick={() => setEditingMealId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <div>
+                    <strong>{meal.mealName}</strong>
+                    <p>{formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
+                    {meal.commuteTime > 0 && (
+                      <p>Commute: {meal.commuteTime} minutes</p>
+                    )}
+                    <button type="button" onClick={() => handleEditMeal(meal)}>Edit</button>
+                    <button type="button" onClick={() => handleDeleteMeal(meal.id)}>Delete</button>
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -1250,6 +1557,16 @@ function App() {
                 <option value="Other">Other</option>
               </select>
             </div>
+            <div>
+              <label>Commute time (minutes, optional): </label>
+              <input
+                type="number"
+                min="0"
+                max="120"
+                value={commuteTime}
+                onChange={(e) => setCommuteTime(Number(e.target.value))}
+              />
+            </div>
             <button type="submit">Add Commitment</button>
           </form>
 
@@ -1259,10 +1576,75 @@ function App() {
           ) : (
             commitments.map((commitment) => (
               <div key={commitment.id}>
-                <strong>{commitment.commitmentName}</strong>
-                <p>Type: {commitment.commitmentType}</p>
-                <p>{formatTime(commitment.commitmentStart)} — {formatTime(commitment.commitmentEnd)}</p>
-                <button onClick={() => handleDeleteCommitment(commitment.id)}>Delete</button>
+                {editingCommitmentId === commitment.id ? (
+                  <div>
+                    <h4>Edit Commitment</h4>
+                    <div>
+                      <label>Commitment name: </label>
+                      <input
+                        type="text"
+                        value={editCommitmentName}
+                        onChange={(e) => setEditCommitmentName(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <label>Start time: </label>
+                      <TimePicker
+                        value={editCommitmentStart}
+                        onChange={setEditCommitmentStart}
+                        clockFormat={savedClockFormat}
+                      />
+                    </div>
+                    <div>
+                      <label>End time: </label>
+                      <TimePicker
+                        value={editCommitmentEnd}
+                        onChange={setEditCommitmentEnd}
+                        clockFormat={savedClockFormat}
+                      />
+                    </div>
+                    <div>
+                      <label>Type: </label>
+                      <select
+                        value={editCommitmentType}
+                        onChange={(e) => setEditCommitmentType(e.target.value)}
+                      >
+                        <option value="">Select type</option>
+                        <option value="Job/Internship">Job/Internship</option>
+                        <option value="Lecture">Lecture</option>
+                        <option value="Lab">Lab</option>
+                        <option value="Discussion">Discussion</option>
+                        <option value="Club Meeting">Club Meeting</option>
+                        <option value="Sports Practice">Sports Practice</option>
+                        <option value="Volunteer">Volunteer</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label>Commute time (minutes): </label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="120"
+                        value={editCommitmentCommuteTime}
+                        onChange={(e) => setEditCommitmentCommuteTime(Number(e.target.value))}
+                      />
+                    </div>
+                    <button type="button" onClick={() => handleUpdateCommitment(commitment.id)}>Save Changes</button>
+                    <button type="button" onClick={() => setEditingCommitmentId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <div>
+                    <strong>{commitment.commitmentName}</strong>
+                    <p>Type: {commitment.commitmentType}</p>
+                    <p>{formatTime(commitment.commitmentStart)} — {formatTime(commitment.commitmentEnd)}</p>
+                    {commitment.commuteTime > 0 && (
+                      <p>Commute: {commitment.commuteTime} minutes</p>
+                    )}
+                    <button type="button" onClick={() => handleEditCommitment(commitment)}>Edit</button>
+                    <button type="button" onClick={() => handleDeleteCommitment(commitment.id)}>Delete</button>
+                  </div>
+                )}
               </div>
             ))
           )}
