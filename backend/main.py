@@ -53,6 +53,36 @@ def init_db():
             FOREIGN KEY (task_id) REFERENCES tasks(id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS meals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mealName TEXT NOT NULL,
+            mealStart TEXT NOT NULL,
+            mealEnd TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS commitments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            commitmentName TEXT NOT NULL,
+            commitmentStart TEXT NOT NULL,
+            commitmentEnd TEXT NOT NULL,
+            commitmentType TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sleep_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wakeTime TEXT NOT NULL,
+            sleepTime TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -78,6 +108,25 @@ class TaskFeedback(BaseModel):
     start_time: Optional[str] = None
     end_time: Optional[str] = None
 
+class Meal(BaseModel):
+    mealName: str
+    mealStart: str
+    mealEnd: str
+
+class Commitment(BaseModel):
+    commitmentName: str
+    commitmentStart: str
+    commitmentEnd: str
+    commitmentType: Optional[str] = None
+
+class SleepSchedule(BaseModel):
+    wakeTime: str
+    sleepTime: str
+
+class Setting(BaseModel):
+    key: str
+    value: str
+
 @app.get("/")
 def read_root():
     return {"message": "Atlas backend is running"}
@@ -101,7 +150,7 @@ def add_task(task: Task):
     conn.commit()
     task_id = cursor.lastrowid
     conn.close()
-    return {"id": task_id, **task.dict()}
+    return {"id": task_id, **task.model_dump()}
 
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int):
@@ -142,3 +191,105 @@ def get_history():
     history = conn.execute("SELECT * FROM task_history ORDER BY completed_at DESC").fetchall()
     conn.close()
     return [dict(h) for h in history]
+
+@app.get("/meals")
+def get_meals():
+    conn = get_db()
+    meals = conn.execute("SELECT * FROM meals").fetchall()
+    conn.close()
+    return [dict(m) for m in meals]
+
+@app.post("/meals")
+def add_meal(meal: Meal):
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO meals (mealName, mealStart, mealEnd) VALUES (?, ?, ?)",
+        (meal.mealName, meal.mealStart, meal.mealEnd)
+    )
+    conn.commit()
+    meal_id = cursor.lastrowid
+    conn.close()
+    return {"id": meal_id, **meal.model_dump()}
+
+@app.delete("/meals/{meal_id}")
+def delete_meal(meal_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM meals WHERE id = ?", (meal_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "Meal deleted"}
+
+@app.get("/commitments")
+def get_commitments():
+    conn = get_db()
+    commitments = conn.execute("SELECT * FROM commitments").fetchall()
+    conn.close()
+    return [dict(c) for c in commitments]
+
+@app.post("/commitments")
+def add_commitment(commitment: Commitment):
+    conn = get_db()
+    cursor = conn.execute(
+        "INSERT INTO commitments (commitmentName, commitmentStart, commitmentEnd, commitmentType) VALUES (?, ?, ?, ?)",
+        (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd, commitment.commitmentType)
+    )
+    conn.commit()
+    commitment_id = cursor.lastrowid
+    conn.close()
+    return {"id": commitment_id, **commitment.model_dump()}
+
+@app.delete("/commitments/{commitment_id}")
+def delete_commitment(commitment_id: int):
+    conn = get_db()
+    conn.execute("DELETE FROM commitments WHERE id = ?", (commitment_id,))
+    conn.commit()
+    conn.close()
+    return {"message": "Commitment deleted"}
+
+@app.get("/sleep")
+def get_sleep():
+    conn = get_db()
+    sleep = conn.execute("SELECT * FROM sleep_schedule ORDER BY id DESC LIMIT 1").fetchone()
+    conn.close()
+    if sleep:
+        return dict(sleep)
+    return None
+
+@app.post("/sleep")
+def save_sleep(sleep: SleepSchedule):
+    conn = get_db()
+    conn.execute("DELETE FROM sleep_schedule")
+    conn.execute(
+        "INSERT INTO sleep_schedule (wakeTime, sleepTime) VALUES (?, ?)",
+        (sleep.wakeTime, sleep.sleepTime)
+    )
+    conn.commit()
+    conn.close()
+    return sleep.model_dump()
+
+@app.get("/settings")
+def get_settings():
+    conn = get_db()
+    settings = conn.execute("SELECT * FROM settings").fetchall()
+    conn.close()
+    return {row['key']: row['value'] for row in settings}
+
+@app.post("/settings")
+def save_setting(setting: Setting):
+    conn = get_db()
+    existing = conn.execute(
+        "SELECT * FROM settings WHERE key = ?", (setting.key,)
+    ).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE settings SET value = ? WHERE key = ?",
+            (setting.value, setting.key)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (?, ?)",
+            (setting.key, setting.value)
+        )
+    conn.commit()
+    conn.close()
+    return setting.model_dump()

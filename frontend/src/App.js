@@ -124,6 +124,39 @@ function App() {
       .then((res) => res.json())
       .then((data) => setHistory(data))
       .catch((err) => console.error('Failed to load history:', err));
+
+    fetch('http://localhost:8000/meals')
+      .then((res) => res.json())
+      .then((data) => setMeals(data))
+      .catch((err) => console.error('Failed to load meals:', err));
+
+    fetch('http://localhost:8000/commitments')
+      .then((res) => res.json())
+      .then((data) => setCommitments(data))
+      .catch((err) => console.error('Failed to load commitments:', err));
+
+    fetch('http://localhost:8000/sleep')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data) {
+          setWakeTime(data.wakeTime);
+          setSleepTime(data.sleepTime);
+          setSleepScheduleSaved(true);
+        }
+      })
+      .catch((err) => console.error('Failed to load sleep schedule:', err));
+
+    fetch('http://localhost:8000/settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.clockFormat) { setSavedClockFormat(data.clockFormat); setClockFormat(data.clockFormat); }
+        if (data.maxBlockLength) { setSavedMaxBlockLength(Number(data.maxBlockLength)); setMaxBlockLength(Number(data.maxBlockLength)); }
+        if (data.morningBuffer) { setSavedMorningBuffer(Number(data.morningBuffer)); setMorningBuffer(Number(data.morningBuffer)); }
+        if (data.nightBuffer) { setSavedNightBuffer(Number(data.nightBuffer)); setNightBuffer(Number(data.nightBuffer)); }
+        if (data.transitionGap) { setSavedTransitionGap(Number(data.transitionGap)); setTransitionGap(Number(data.transitionGap)); }
+        if (data.energyPattern) { setSavedEnergyPattern(data.energyPattern); setEnergyPattern(data.energyPattern); }
+      })
+      .catch((err) => console.error('Failed to load settings:', err));
   }, []);
 
   function classifyTask(name, difficulty) {
@@ -202,47 +235,64 @@ function App() {
 
   function handleAddMeal(e) {
     e.preventDefault();
-    const newMeal = {
-      id: Date.now(),
-      mealName,
-      mealStart,
-      mealEnd
-    };
-    setMeals([...meals, newMeal]);
-    setMealName('');
-    setMealStart('');
-    setMealEnd('');
+    const newMeal = { mealName, mealStart, mealEnd };
+    fetch('http://localhost:8000/meals', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newMeal)
+    })
+      .then((res) => res.json())
+      .then((savedMeal) => {
+        setMeals([...meals, savedMeal]);
+        setMealName('');
+        setMealStart('');
+        setMealEnd('');
+      })
+      .catch((err) => console.error('Failed to add meal:', err));
   }
 
   function handleDeleteMeal(id) {
-    setMeals(meals.filter((meal) => meal.id !== id));
+    fetch(`http://localhost:8000/meals/${id}`, { method: 'DELETE' })
+      .then(() => setMeals(meals.filter((meal) => meal.id !== id)))
+      .catch((err) => console.error('Failed to delete meal:', err));
   }
 
   function handleAddCommitment(e) {
     e.preventDefault();
-    const newCommitment = {
-      id: Date.now(),
-      commitmentName,
-      commitmentStart,
-      commitmentEnd,
-      commitmentType
-    };
-    setCommitments([...commitments, newCommitment]);
-    setCommitmentName('');
-    setCommitmentStart('');
-    setCommitmentEnd('');
-    setCommitmentType('');
+    const newCommitment = { commitmentName, commitmentStart, commitmentEnd, commitmentType };
+    fetch('http://localhost:8000/commitments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newCommitment)
+    })
+      .then((res) => res.json())
+      .then((savedCommitment) => {
+        setCommitments([...commitments, savedCommitment]);
+        setCommitmentName('');
+        setCommitmentStart('');
+        setCommitmentEnd('');
+        setCommitmentType('');
+      })
+      .catch((err) => console.error('Failed to add commitment:', err));
   }
 
   function handleDeleteCommitment(id) {
-    setCommitments(commitments.filter((commitment) => commitment.id !== id));
+    fetch(`http://localhost:8000/commitments/${id}`, { method: 'DELETE' })
+      .then(() => setCommitments(commitments.filter((c) => c.id !== id)))
+      .catch((err) => console.error('Failed to delete commitment:', err));
   }
 
   function handleSaveSleepSchedule() {
     if (!wakeTime || !sleepTime) {
       return;
     }
-    setSleepScheduleSaved(true);
+    fetch('http://localhost:8000/sleep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wakeTime, sleepTime })
+    })
+      .then(() => setSleepScheduleSaved(true))
+      .catch((err) => console.error('Failed to save sleep schedule:', err));
   }
 
   function handleAddKeyword() {
@@ -448,7 +498,7 @@ function App() {
         if (safetyCounter > 1000) {
           break;
         }
-        currentTime = getNextFreeTime(currentTime, blockedRanges, schedule, toTimeString, savedTransitionGap);
+        currentTime = getNextFreeTime(currentTime, blockedRanges, savedTransitionGap);
         if (currentTime >= sleep) {
           break;
         }
@@ -486,7 +536,7 @@ function App() {
             });
             currentTime = breakEnd + savedTransitionGap;
           } else {
-            currentTime = getNextFreeTime(currentTime, blockedRanges, schedule, toTimeString, savedTransitionGap);
+            currentTime = getNextFreeTime(currentTime, blockedRanges, savedTransitionGap);
           }
         } else if (!isFirstBlock || remaining === 0) {
           currentTime += savedTransitionGap;
@@ -522,16 +572,10 @@ function App() {
     return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} minutes`;
   }
 
-  function getNextFreeTime(from, blockedRanges, schedule, toTimeString, transitionGap) {
+  function getNextFreeTime(from, blockedRanges, transitionGap) {
     let time = from;
     for (const range of blockedRanges) {
       if (time >= range.start && time < range.end) {
-        schedule.push({
-          start: toTimeString(range.start),
-          end: toTimeString(range.end),
-          label: range.label,
-          type: range.type
-        });
         time = range.end + transitionGap;
       }
     }
@@ -639,11 +683,11 @@ function App() {
 
   function calculateProductiveTime() {
     const periods = {
-      'Early Morning (12am–6am)': { start: 0, end: 6, completed: 0, total: 0 },
-      'Morning (6am–12pm)': { start: 6, end: 12, completed: 0, total: 0 },
-      'Afternoon (12pm–5pm)': { start: 12, end: 17, completed: 0, total: 0 },
-      'Evening (5pm–10pm)': { start: 17, end: 22, completed: 0, total: 0 },
-      'Night (10pm–12am)': { start: 22, end: 24, completed: 0, total: 0 }
+      'Early Morning (12:00am-6:00am)': { start: 0, end: 6, completed: 0, total: 0 },
+      'Morning (6:00am-12:00pm)': { start: 6, end: 12, completed: 0, total: 0 },
+      'Afternoon (12:00pm-5:00pm)': { start: 12, end: 17, completed: 0, total: 0 },
+      'Evening (5:00pm-10:00pm)': { start: 17, end: 22, completed: 0, total: 0 },
+      'Night (10:00pm-12:00am)': { start: 22, end: 24, completed: 0, total: 0 }
     };
 
     history.forEach((h) => {
@@ -651,7 +695,8 @@ function App() {
         return;
       }
       const startHour = new Date(h.start_time).getHours();
-      for (const [data] of Object.entries(periods)) {
+      // eslint-disable-next-line no-unused-vars
+      for (const [_period, data] of Object.entries(periods)) {
         if (startHour >= data.start && startHour < data.end) {
           data.total++;
           if (h.completion_status === 'Completed') {
@@ -681,6 +726,17 @@ function App() {
       }
     }
     return { period: bestPeriod, rate: bestRate.toFixed(1) };
+  }
+
+  function saveSetting(key, value) {
+    fetch('http://localhost:8000/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value: String(value) })
+    })
+      .then((res) => res.json())
+      .then((data) => console.log('Setting saved:', data))
+      .catch((err) => console.error('Failed to save setting:', err));
   }
 
   return (
@@ -1351,7 +1407,7 @@ function App() {
               <option value="12">12-hour (AM/PM)</option>
               <option value="24">24-hour</option>
             </select>
-            <button type="button" onClick={() => setSavedClockFormat(clockFormat)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedClockFormat(clockFormat); saveSetting('clockFormat', clockFormat); }}>Confirm</button>
           </div>
           <div>
             <label>Max Deep Work Block (minutes): </label>
@@ -1362,7 +1418,7 @@ function App() {
               value={maxBlockLength}
               onChange={(e) => setMaxBlockLength(Number(e.target.value))}
             />
-            <button type="button" onClick={() => setSavedMaxBlockLength(maxBlockLength)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedMaxBlockLength(maxBlockLength); saveSetting('maxBlockLength', maxBlockLength); }}>Confirm</button>
           </div>
           <div>
             <label>Morning Buffer (minutes): </label>
@@ -1373,7 +1429,7 @@ function App() {
               value={morningBuffer}
               onChange={(e) => setMorningBuffer(Number(e.target.value))}
             />
-            <button type="button" onClick={() => setSavedMorningBuffer(morningBuffer)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedMorningBuffer(morningBuffer); saveSetting('morningBuffer', morningBuffer); }}>Confirm</button>
           </div>
           <div>
             <label>Night Buffer (minutes): </label>
@@ -1384,7 +1440,7 @@ function App() {
               value={nightBuffer}
               onChange={(e) => setNightBuffer(Number(e.target.value))}
             />
-            <button type="button" onClick={() => setSavedNightBuffer(nightBuffer)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedNightBuffer(nightBuffer); saveSetting('nightBuffer', nightBuffer); }}>Confirm</button>
           </div>
           <div>
             <label>Transition Gap (5-30 minutes): </label>
@@ -1395,7 +1451,7 @@ function App() {
               value={transitionGap}
               onChange={(e) => setTransitionGap(Number(e.target.value))}
             />
-            <button type="button" onClick={() => setSavedTransitionGap(transitionGap)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedTransitionGap(transitionGap); saveSetting('transitionGap', transitionGap); }}>Confirm</button>
           </div>
           <div>
             <label>Energy Pattern: </label>
@@ -1403,12 +1459,12 @@ function App() {
               value={energyPattern}
               onChange={(e) => setEnergyPattern(e.target.value)}
             >
-              <option value="morning">Morning person (6am-12pm)</option>
-              <option value="afternoon">Afternoon person (12pm-5pm)</option>
-              <option value="evening">Evening person (5pm-10pm)</option>
+              <option value="morning">Morning person (6:00am-12:00pm)</option>
+              <option value="afternoon">Afternoon person (12:00pm-5:00pm)</option>
+              <option value="evening">Evening person (5:00pm-10:00pm)</option>
               <option value="between">Between classes</option>
             </select>
-            <button type="button" onClick={() => setSavedEnergyPattern(energyPattern)}>Confirm</button>
+            <button type="button" onClick={() => { setSavedEnergyPattern(energyPattern); saveSetting('energyPattern', energyPattern); }}>Confirm</button>
           </div>
         </section>
       </main>
