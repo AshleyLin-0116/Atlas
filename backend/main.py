@@ -114,6 +114,36 @@ def init_db():
         conn.commit()
     except:
         pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN workOnDueDate INTEGER DEFAULT 1")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN description TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE meals ADD COLUMN actual_start TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE meals ADD COLUMN actual_end TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE sleep_schedule ADD COLUMN actual_wake TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE sleep_schedule ADD COLUMN actual_sleep TEXT")
+        conn.commit()
+    except:
+        pass
     conn.commit()
     conn.close()
 
@@ -160,6 +190,43 @@ class Setting(BaseModel):
     key: str
     value: str
 
+class Task(BaseModel):
+    taskName: str
+    deadline: str
+    difficulty: float
+    importance: float
+    userPreference: float
+    duration: int
+    taskType: str
+    actual_duration: Optional[float] = None
+    actual_difficulty: Optional[float] = None
+    completion_status: Optional[str] = None
+    category: Optional[str] = None
+    workOnDueDate: Optional[bool] = True
+
+class Task(BaseModel):
+    taskName: str
+    deadline: str
+    difficulty: float
+    importance: float
+    userPreference: float
+    duration: int
+    taskType: str
+    actual_duration: Optional[float] = None
+    actual_difficulty: Optional[float] = None
+    completion_status: Optional[str] = None
+    category: Optional[str] = None
+    workOnDueDate: Optional[bool] = True
+    description: Optional[str] = None
+
+class ActualMealTime(BaseModel):
+    actual_start: Optional[str] = None
+    actual_end: Optional[str] = None
+
+class ActualSleepTime(BaseModel):
+    actual_wake: Optional[str] = None
+    actual_sleep: Optional[str] = None
+
 @app.get("/")
 def read_root():
     return {"message": "Atlas backend is running"}
@@ -176,14 +243,14 @@ def add_task(task: Task):
     conn = get_db()
     cursor = conn.execute(
         """INSERT INTO tasks 
-        (taskName, deadline, difficulty, importance, userPreference, duration, taskType, category)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (taskName, deadline, difficulty, importance, userPreference, duration, taskType, category, workOnDueDate, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (task.taskName, task.deadline, task.difficulty, task.importance,
-        task.userPreference, task.duration, task.taskType, task.category)
+        task.userPreference, task.duration, task.taskType, task.category,
+        task.workOnDueDate, task.description)
     )
     conn.commit()
-    task_id = cursor.lastrowid
-    result = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    result = conn.execute("SELECT * FROM tasks WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
     return dict(result)
 
@@ -227,10 +294,12 @@ def update_task(task_id: int, task: Task):
         conn.execute(
             """UPDATE tasks SET
             taskName = ?, deadline = ?, difficulty = ?, importance = ?,
-            userPreference = ?, duration = ?, taskType = ?, category = ?
+            userPreference = ?, duration = ?, taskType = ?, category = ?,
+            workOnDueDate = ?, description = ?
             WHERE id = ?""",
             (task.taskName, task.deadline, task.difficulty, task.importance,
-            task.userPreference, task.duration, task.taskType, task.category, task_id)
+            task.userPreference, task.duration, task.taskType, task.category,
+            task.workOnDueDate, task.description, task_id)
         )
         conn.commit()
         result = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -266,6 +335,18 @@ def add_meal(meal: Meal):
     meal_id = cursor.lastrowid
     conn.close()
     return {"id": meal_id, **meal.model_dump()}
+
+@app.patch("/meals/{meal_id}/actual")
+def log_actual_meal(meal_id: int, data: ActualMealTime):
+    conn = get_db()
+    conn.execute(
+        "UPDATE meals SET actual_start = ?, actual_end = ? WHERE id = ?",
+        (data.actual_start, data.actual_end, meal_id)
+    )
+    conn.commit()
+    result = conn.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone()
+    conn.close()
+    return dict(result)
 
 @app.put("/meals/{meal_id}")
 def update_meal(meal_id: int, meal: Meal):
@@ -350,6 +431,18 @@ def save_sleep(sleep: SleepSchedule):
     conn.commit()
     conn.close()
     return sleep.model_dump()
+
+@app.patch("/sleep/actual")
+def log_actual_sleep(data: ActualSleepTime):
+    conn = get_db()
+    conn.execute(
+        """UPDATE sleep_schedule SET actual_wake = ?, actual_sleep = ?
+        WHERE id = (SELECT id FROM sleep_schedule ORDER BY id DESC LIMIT 1)""",
+        (data.actual_wake, data.actual_sleep)
+    )
+    conn.commit()
+    conn.close()
+    return {"message": "Actual sleep logged"}
 
 @app.get("/settings")
 def get_settings():

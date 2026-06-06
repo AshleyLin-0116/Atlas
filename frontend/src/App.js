@@ -135,6 +135,16 @@ function App() {
   const [editCommitmentEnd, setEditCommitmentEnd] = useState('');
   const [editCommitmentType, setEditCommitmentType] = useState('');
   const [editCommitmentCommuteTime, setEditCommitmentCommuteTime] = useState(0);
+  const [workOnDueDate, setWorkOnDueDate] = useState(true);
+  const [editWorkOnDueDate, setEditWorkOnDueDate] = useState(true);
+  const [description, setDescription] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [mealFeedbackId, setMealFeedbackId] = useState(null);
+  const [actualMealStart, setActualMealStart] = useState('');
+  const [actualMealEnd, setActualMealEnd] = useState('');
+  const [showSleepFeedback, setShowSleepFeedback] = useState(false);
+  const [actualWakeTime, setActualWakeTime] = useState('');
+  const [actualSleepTime, setActualSleepTime] = useState('');
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -222,7 +232,9 @@ function App() {
       userPreference: Number(userPreference),
       duration: Number(duration),
       taskType: finalTaskType,
-      category
+      category,
+      workOnDueDate,
+      description
     };
     fetch('http://localhost:8000/tasks', {
       method: 'POST',
@@ -241,6 +253,8 @@ function App() {
         setAutoTaskType('deep');
         setCategory('');
         setUserOverrideType(null);
+        setWorkOnDueDate(true);
+        setDescription('');
       })
       .catch((err) => console.error('Failed to add task:', err));
   }
@@ -358,7 +372,8 @@ function App() {
     const today = new Date();
     const deadlineDate = new Date(task.deadline);
     const daysUntilDeadline = Math.max(0, (deadlineDate - today) / (1000 * 60 * 60 * 24));
-    const urgency = daysUntilDeadline === 0 ? 1 : Math.max(0, 1 - daysUntilDeadline / 30);
+    const effectiveDays = task.workOnDueDate ? daysUntilDeadline : Math.max(0, daysUntilDeadline - 1);
+    const urgency = effectiveDays === 0 ? 1 : Math.max(0, 1 - effectiveDays / 30);
     const importance = Number(task.importance) / 10;
     const userPreference = Number(task.userPreference) / 10;
     const difficulty = Number(task.difficulty) / 10;
@@ -424,8 +439,10 @@ function App() {
       const m = minutes % 60;
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
+
     const wake = toMinutes(wakeTime) + savedMorningBuffer;
     const sleep = toMinutes(sleepTime) - savedNightBuffer;
+
     const blockedRanges = [
       ...meals.flatMap((meal) => {
         const blocks = [{
@@ -510,10 +527,31 @@ function App() {
       return time >= peakHours.start && time < peakHours.end;
     };
 
-    const isBlocked = (start, end) => {
-      return blockedRanges.some(
+    const isOccupied = (start, end) => {
+      const fixedBlocked = blockedRanges.some(
         (range) => start < range.end && end > range.start
       );
+      const taskBlocked = schedule.some(
+        (block) => (block.type === 'study' || block.type === 'peak' || block.type === 'break')
+          && start < toMinutes(block.end) && end > toMinutes(block.start)
+      );
+      return fixedBlocked || taskBlocked;
+    };
+
+    const getNextFreeStart = (from) => {
+      let time = from;
+      let safetyCounter = 0;
+      while (safetyCounter < 1000) {
+        safetyCounter++;
+        if (time >= sleep) {
+          return sleep;
+        }
+        if (!isOccupied(time, time + 1)) {
+          return time;
+        }
+        time++;
+      }
+      return sleep;
     };
 
     const sortedTasks = [...tasks]
@@ -531,12 +569,10 @@ function App() {
       }
     }
 
-    let currentTime = wake;
-
     for (const task of orderedTasks) {
       let remaining = Number(task.duration);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
-      let isFirstBlock = true;
+      let currentTime = getNextFreeStart(wake);
 
       let safetyCounter = 0;
       while (remaining > 0 && currentTime < sleep) {
@@ -544,19 +580,22 @@ function App() {
         if (safetyCounter > 1000) {
           break;
         }
-        currentTime = getNextFreeTime(currentTime, blockedRanges, savedTransitionGap);
+
+        currentTime = getNextFreeStart(currentTime);
         if (currentTime >= sleep) {
           break;
         }
-        const blockSize = Math.min(remaining, limit, sleep - currentTime);
-        if (blockSize <= 0) {
-          break;
+
+        let blockEnd = currentTime + Math.min(remaining, limit);
+        while (blockEnd > currentTime && isOccupied(currentTime, blockEnd)) {
+          blockEnd--;
         }
-        const blockEnd = currentTime + blockSize;
-        if (isBlocked(currentTime, blockEnd)) {
-          currentTime = blockEnd;
+        const blockSize = blockEnd - currentTime;
+        if (blockSize <= 0) {
+          currentTime++;
           continue;
         }
+
         schedule.push({
           start: toTimeString(currentTime),
           end: toTimeString(blockEnd),
@@ -564,16 +603,14 @@ function App() {
           type: isInPeak(currentTime) ? 'peak' : 'study',
           taskType: task.taskType
         });
+
         remaining -= blockSize;
         currentTime = blockEnd;
+
         if (remaining > 0) {
           const breakLength = Math.max(15, Math.round(blockSize * 0.15));
-          const breakStart = currentTime;
-          const breakEnd = breakStart + breakLength;
-          const breakOverlaps = blockedRanges.some(
-            (range) => breakStart < range.end && breakEnd > range.start
-          );
-          if (!breakOverlaps) {
+          const breakEnd = currentTime + breakLength;
+          if (!isOccupied(currentTime, breakEnd) && breakEnd <= sleep) {
             schedule.push({
               start: toTimeString(currentTime),
               end: toTimeString(breakEnd),
@@ -582,14 +619,14 @@ function App() {
             });
             currentTime = breakEnd + savedTransitionGap;
           } else {
-            currentTime = getNextFreeTime(currentTime, blockedRanges, savedTransitionGap);
+            currentTime = getNextFreeStart(currentTime);
           }
-        } else if (!isFirstBlock || remaining === 0) {
+        } else {
           currentTime += savedTransitionGap;
         }
-        isFirstBlock = false;
       }
     }
+
     return schedule.sort((a, b) => a.start.localeCompare(b.start));
   }
 
@@ -795,6 +832,8 @@ function App() {
     setEditUserPreference(task.userPreference);
     setEditDuration(task.duration);
     setEditTaskType(task.taskType);
+    setEditWorkOnDueDate(task.workOnDueDate !== 0);
+    setEditDescription(task.description || '');
   }
 
   function handleUpdateTask(taskId) {
@@ -807,7 +846,9 @@ function App() {
       userPreference: Number(editUserPreference),
       duration: Number(editDuration),
       taskType: editTaskType,
-      category: editCategory
+      category: editCategory,
+      workOnDueDate: editWorkOnDueDate,
+      description: editDescription
     };
     fetch(`http://localhost:8000/tasks/${taskId}`, {
       method: 'PUT',
@@ -883,6 +924,42 @@ function App() {
         setEditingCommitmentId(null);
       })
       .catch((err) => console.error('Failed to update commitment:', err));
+  }
+
+  function handleLogActualMeal(mealId) {
+    fetch(`http://localhost:8000/meals/${mealId}/actual`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actual_start: actualMealStart,
+        actual_end: actualMealEnd
+      })
+    })
+      .then((res) => res.json())
+      .then((saved) => {
+        setMeals(meals.map((meal) => meal.id === mealId ? saved : meal));
+        setMealFeedbackId(null);
+        setActualMealStart('');
+        setActualMealEnd('');
+      })
+      .catch((err) => console.error('Failed to log actual meal time:', err));
+  }
+
+  function handleLogActualSleep() {
+    fetch('http://localhost:8000/sleep/actual', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actual_wake: actualWakeTime,
+        actual_sleep: actualSleepTime
+      })
+    })
+      .then(() => {
+        setShowSleepFeedback(false);
+        setActualWakeTime('');
+        setActualSleepTime('');
+      })
+      .catch((err) => console.error('Failed to log actual sleep:', err));
   }
 
   return (
@@ -991,6 +1068,15 @@ function App() {
                   setUserOverrideType(null);
                 }}
                 required
+              />
+            </div>
+            <div>
+              <label>Description (optional): </label>
+              <textarea
+                placeholder="e.g. Binary trees assignment covering chapters 5-7"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows="2"
               />
             </div>
             <div>
@@ -1116,6 +1202,15 @@ function App() {
               />
             </div>
             <div>
+              <label>Can you work on this task on the due date? </label>
+              <input
+                type="checkbox"
+                checked={workOnDueDate}
+                onChange={(e) => setWorkOnDueDate(e.target.checked)}
+              />
+              <span>{workOnDueDate ? 'Yes' : 'No'}</span>
+            </div>
+            <div>
               <p>Atlas thinks this is: <strong>{activeTaskType === 'deep' ? 'Deep Work' : 'Light Work'}</strong></p>
               {hasConflict && (
                 <p>You changed this to: <strong>{userOverrideType === 'deep' ? 'Deep Work' : 'Light Work'}</strong></p>
@@ -1144,6 +1239,9 @@ function App() {
               .map((task) => (
                 <div key={task.id}>
                   <strong>{task.taskName}</strong>
+                  {task.description && (
+                    <p>Description: {task.description}</p>
+                  )}
                   <p>Category: {task.category}</p>
                   <p>Deadline: {task.deadline}</p>
                   <p>Difficulty: {task.difficulty}</p>
@@ -1151,6 +1249,7 @@ function App() {
                   <p>Personal Priority: {task.userPreference}</p>
                   <p>Duration: {task.duration} minutes</p>
                   <p>Priority Score: {calculatePriorityScore(task)}</p>
+                  <p>Work on due date: {task.workOnDueDate ? 'Yes' : 'No'}</p>
                   <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
                   {task.completion_status ? (
                     <div>
@@ -1293,6 +1392,14 @@ function App() {
                         />
                       </div>
                       <div>
+                        <label>Description (optional): </label>
+                        <textarea
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          rows="2"
+                        />
+                      </div>
+                      <div>
                         <label>Deadline: </label>
                         <input
                           type="date"
@@ -1362,6 +1469,15 @@ function App() {
                         />
                       </div>
                       <div>
+                        <label>Can you work on this task on the due date? </label>
+                        <input
+                          type="checkbox"
+                          checked={editWorkOnDueDate}
+                          onChange={(e) => setEditWorkOnDueDate(e.target.checked)}
+                        />
+                        <span>{editWorkOnDueDate ? 'Yes' : 'No'}</span>
+                      </div>
+                      <div>
                         <label>Task Type: </label>
                         <select
                           value={editTaskType}
@@ -1407,7 +1523,36 @@ function App() {
           </div>
           <button type="button" onClick={handleSaveSleepSchedule}>Confirm</button>
           {sleepScheduleSaved && (
-            <p>Sleep schedule saved — wake up at {formatTime(wakeTime)}, sleep at {formatTime(sleepTime)}.</p>
+            <div>
+              <p>Sleep schedule saved — wake up at {formatTime(wakeTime)}, sleep at {formatTime(sleepTime)}.</p>
+              {showSleepFeedback ? (
+                <div>
+                  <h4>What actually happened?</h4>
+                  <div>
+                    <label>Actual wake-up time: </label>
+                    <TimePicker
+                      value={actualWakeTime}
+                      onChange={setActualWakeTime}
+                      clockFormat={savedClockFormat}
+                    />
+                  </div>
+                  <div>
+                    <label>Actual sleep time: </label>
+                    <TimePicker
+                      value={actualSleepTime}
+                      onChange={setActualSleepTime}
+                      clockFormat={savedClockFormat}
+                    />
+                  </div>
+                  <button type="button" onClick={handleLogActualSleep}>Save</button>
+                  <button type="button" onClick={() => setShowSleepFeedback(false)}>Cancel</button>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowSleepFeedback(true)}>
+                  Log Actual Sleep Times
+                </button>
+              )}
+            </div>
           )}
 
           <h3>Meals</h3>
@@ -1500,9 +1645,39 @@ function App() {
                 ) : (
                   <div>
                     <strong>{meal.mealName}</strong>
-                    <p>{formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
+                    <p>Planned: {formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
                     {meal.commuteTime > 0 && (
                       <p>Commute: {meal.commuteTime} minutes</p>
+                    )}
+                    {meal.actual_start && (
+                      <p>Actual: {formatTime(meal.actual_start)} — {formatTime(meal.actual_end)}</p>
+                    )}
+                    {mealFeedbackId === meal.id ? (
+                      <div>
+                        <h4>What actually happened?</h4>
+                        <div>
+                          <label>Actual start time: </label>
+                          <TimePicker
+                            value={actualMealStart}
+                            onChange={setActualMealStart}
+                            clockFormat={savedClockFormat}
+                          />
+                        </div>
+                        <div>
+                          <label>Actual end time: </label>
+                          <TimePicker
+                            value={actualMealEnd}
+                            onChange={setActualMealEnd}
+                            clockFormat={savedClockFormat}
+                          />
+                        </div>
+                        <button type="button" onClick={() => handleLogActualMeal(meal.id)}>Save</button>
+                        <button type="button" onClick={() => setMealFeedbackId(null)}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setMealFeedbackId(meal.id)}>
+                        Log Actual Time
+                      </button>
                     )}
                     <button type="button" onClick={() => handleEditMeal(meal)}>Edit</button>
                     <button type="button" onClick={() => handleDeleteMeal(meal.id)}>Delete</button>
