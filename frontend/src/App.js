@@ -61,6 +61,19 @@ function TimePicker({ value, onChange, clockFormat }) {
   );
 }
 
+function FlexPreferenceSelect({ value, onChange }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      <option value="any">Any time</option>
+      <option value="early_morning">Early morning (before 9am)</option>
+      <option value="morning">Morning (9am–12pm)</option>
+      <option value="afternoon">Afternoon (12pm–5pm)</option>
+      <option value="evening">Evening (5pm–9pm)</option>
+      <option value="night">Night (after 9pm)</option>
+    </select>
+  );
+}
+
 function App() {
   const [difficulty, setDifficulty] = useState(5);
   const [importance, setImportance] = useState(5);
@@ -145,6 +158,22 @@ function App() {
   const [showSleepFeedback, setShowSleepFeedback] = useState(false);
   const [actualWakeTime, setActualWakeTime] = useState('');
   const [actualSleepTime, setActualSleepTime] = useState('');
+  const [mealTimeMode, setMealTimeMode] = useState('fixed');
+  const [mealFlexDuration, setMealFlexDuration] = useState(30);
+  const [mealFlexPreference, setMealFlexPreference] = useState('any');
+  const [commitmentTimeMode, setCommitmentTimeMode] = useState('fixed');
+  const [commitmentFlexDuration, setCommitmentFlexDuration] = useState(60);
+  const [commitmentFlexPreference, setCommitmentFlexPreference] = useState('any');
+  const [editMealTimeMode, setEditMealTimeMode] = useState('fixed');
+  const [editMealFlexDuration, setEditMealFlexDuration] = useState(30);
+  const [editMealFlexPreference, setEditMealFlexPreference] = useState('any');
+  const [editCommitmentTimeMode, setEditCommitmentTimeMode] = useState('fixed');
+  const [editCommitmentFlexDuration, setEditCommitmentFlexDuration] = useState(60);
+  const [editCommitmentFlexPreference, setEditCommitmentFlexPreference] = useState('any');
+  const [showerDuration, setShowerDuration] = useState(15);
+  const [savedShowerDuration, setSavedShowerDuration] = useState(15);
+  const [showerPreference, setShowerPreference] = useState('morning');
+  const [savedShowerPreference, setSavedShowerPreference] = useState('morning');
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -181,12 +210,30 @@ function App() {
     fetch('http://localhost:8000/settings')
       .then((res) => res.json())
       .then((data) => {
-        if (data.clockFormat) { setSavedClockFormat(data.clockFormat); setClockFormat(data.clockFormat); }
-        if (data.maxBlockLength) { setSavedMaxBlockLength(Number(data.maxBlockLength)); setMaxBlockLength(Number(data.maxBlockLength)); }
-        if (data.morningBuffer) { setSavedMorningBuffer(Number(data.morningBuffer)); setMorningBuffer(Number(data.morningBuffer)); }
-        if (data.nightBuffer) { setSavedNightBuffer(Number(data.nightBuffer)); setNightBuffer(Number(data.nightBuffer)); }
-        if (data.transitionGap) { setSavedTransitionGap(Number(data.transitionGap)); setTransitionGap(Number(data.transitionGap)); }
-        if (data.energyPattern) { setSavedEnergyPattern(data.energyPattern); setEnergyPattern(data.energyPattern); }
+        if (data.clockFormat) { 
+          setSavedClockFormat(data.clockFormat); setClockFormat(data.clockFormat); 
+        }
+        if (data.maxBlockLength) { 
+          setSavedMaxBlockLength(Number(data.maxBlockLength)); setMaxBlockLength(Number(data.maxBlockLength)); 
+        }
+        if (data.morningBuffer) { 
+          setSavedMorningBuffer(Number(data.morningBuffer)); setMorningBuffer(Number(data.morningBuffer)); 
+        }
+        if (data.nightBuffer) { 
+          setSavedNightBuffer(Number(data.nightBuffer)); setNightBuffer(Number(data.nightBuffer)); 
+        }
+        if (data.transitionGap) { 
+          setSavedTransitionGap(Number(data.transitionGap)); setTransitionGap(Number(data.transitionGap)); 
+        }
+        if (data.showerDuration) { 
+          setSavedShowerDuration(Number(data.showerDuration)); setShowerDuration(Number(data.showerDuration)); 
+        }
+        if (data.showerPreference) { 
+          setSavedShowerPreference(data.showerPreference); setShowerPreference(data.showerPreference); 
+        }
+        if (data.energyPattern) { 
+          setSavedEnergyPattern(data.energyPattern); setEnergyPattern(data.energyPattern); 
+        }
       })
       .catch((err) => console.error('Failed to load settings:', err));
   }, []);
@@ -271,7 +318,15 @@ function App() {
 
   function handleAddMeal(e) {
     e.preventDefault();
-    const newMeal = { mealName, mealStart, mealEnd, commuteTime: mealCommuteTime };
+    const newMeal = {
+      mealName,
+      mealStart: mealTimeMode === 'fixed' ? mealStart : null,
+      mealEnd: mealTimeMode === 'fixed' ? mealEnd : null,
+      commuteTime: mealCommuteTime,
+      timeMode: mealTimeMode,
+      flexDuration: mealFlexDuration,
+      flexPreference: mealFlexPreference
+    };
     fetch('http://localhost:8000/meals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -284,6 +339,9 @@ function App() {
         setMealStart('');
         setMealEnd('');
         setMealCommuteTime(0);
+        setMealTimeMode('fixed');
+        setMealFlexDuration(30);
+        setMealFlexPreference('any');
       })
       .catch((err) => console.error('Failed to add meal:', err));
   }
@@ -296,7 +354,16 @@ function App() {
 
   function handleAddCommitment(e) {
     e.preventDefault();
-    const newCommitment = { commitmentName, commitmentStart, commitmentEnd, commitmentType, commuteTime };
+    const newCommitment = {
+      commitmentName,
+      commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null,
+      commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null,
+      commitmentType,
+      commuteTime,
+      timeMode: commitmentTimeMode,
+      flexDuration: commitmentFlexDuration,
+      flexPreference: commitmentFlexPreference
+    };
     fetch('http://localhost:8000/commitments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -310,6 +377,9 @@ function App() {
         setCommitmentEnd('');
         setCommitmentType('');
         setCommuteTime(0);
+        setCommitmentTimeMode('fixed');
+        setCommitmentFlexDuration(60);
+        setCommitmentFlexPreference('any');
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -445,6 +515,9 @@ function App() {
 
     const blockedRanges = [
       ...meals.flatMap((meal) => {
+        if (meal.timeMode === 'flexible' || !meal.mealStart || !meal.mealEnd) {
+          return [];
+        }
         const blocks = [{
           start: toMinutes(meal.mealStart),
           end: toMinutes(meal.mealEnd),
@@ -458,10 +531,19 @@ function App() {
             label: `Commute to ${meal.mealName}`,
             type: 'commute'
           });
+          blocks.push({
+            start: toMinutes(meal.mealEnd),
+            end: toMinutes(meal.mealEnd) + meal.commuteTime,
+            label: `Commute back from ${meal.mealName}`,
+            type: 'commute'
+          });
         }
         return blocks;
       }),
       ...commitments.flatMap((commitment) => {
+        if (commitment.timeMode === 'flexible' || !commitment.commitmentStart || !commitment.commitmentEnd) {
+          return [];
+        }
         const blocks = [{
           start: toMinutes(commitment.commitmentStart),
           end: toMinutes(commitment.commitmentEnd),
@@ -475,10 +557,35 @@ function App() {
             label: `Commute to ${commitment.commitmentName}`,
             type: 'commute'
           });
+          blocks.push({
+            start: toMinutes(commitment.commitmentEnd),
+            end: toMinutes(commitment.commitmentEnd) + commitment.commuteTime,
+            label: `Commute back from ${commitment.commitmentName}`,
+            type: 'commute'
+          });
         }
         return blocks;
       })
     ].sort((a, b) => a.start - b.start);
+
+    if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
+      blockedRanges.push({
+        start: wake,
+        end: wake + savedShowerDuration,
+        label: 'Shower',
+        type: 'shower'
+      });
+    }
+    if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
+      const eveningShowerStart = toMinutes(sleepTime) - savedNightBuffer - savedShowerDuration;
+      blockedRanges.push({
+        start: eveningShowerStart,
+        end: eveningShowerStart + savedShowerDuration,
+        label: 'Shower',
+        type: 'shower'
+      });
+    }
+    blockedRanges.sort((a, b) => a.start - b.start);
 
     const schedule = [];
 
@@ -489,12 +596,31 @@ function App() {
       type: 'buffer'
     });
 
+    if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
+      schedule.push({
+        start: toTimeString(wake),
+        end: toTimeString(wake + savedShowerDuration),
+        label: 'Shower',
+        type: 'shower'
+      });
+    }
+
     for (const range of blockedRanges) {
       schedule.push({
         start: toTimeString(range.start),
         end: toTimeString(range.end),
         label: range.label,
         type: range.type
+      });
+    }
+
+    if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
+      const eveningShowerStart = toMinutes(sleepTime) - savedNightBuffer - savedShowerDuration;
+      schedule.push({
+        start: toTimeString(eveningShowerStart),
+        end: toTimeString(eveningShowerStart + savedShowerDuration),
+        label: 'Shower',
+        type: 'shower'
       });
     }
 
@@ -528,14 +654,9 @@ function App() {
     };
 
     const isOccupied = (start, end) => {
-      const fixedBlocked = blockedRanges.some(
-        (range) => start < range.end && end > range.start
+      return schedule.some(
+        (block) => start < toMinutes(block.end) && end > toMinutes(block.start)
       );
-      const taskBlocked = schedule.some(
-        (block) => (block.type === 'study' || block.type === 'peak' || block.type === 'break')
-          && start < toMinutes(block.end) && end > toMinutes(block.start)
-      );
-      return fixedBlocked || taskBlocked;
     };
 
     const getNextFreeStart = (from) => {
@@ -553,6 +674,93 @@ function App() {
       }
       return sleep;
     };
+
+    const getPreferenceWindow = (preference) => {
+      if (preference === 'early_morning') return { start: 0, end: 9 * 60 };
+      if (preference === 'morning') return { start: 9 * 60, end: 12 * 60 };
+      if (preference === 'afternoon') return { start: 12 * 60, end: 17 * 60 };
+      if (preference === 'evening') return { start: 17 * 60, end: 21 * 60 };
+      if (preference === 'night') return { start: 21 * 60, end: sleep };
+      return { start: wake, end: sleep };
+    };
+
+    const placeFlexBlock = (label, duration, preference, type, commuteTime = 0) => {
+      const totalDuration = duration + (commuteTime * 2);
+      const window = getPreferenceWindow(preference);
+      const windowStart = Math.max(wake, window.start);
+      const windowEnd = Math.min(sleep, window.end);
+      let start = getNextFreeStart(windowStart);
+      while (start + totalDuration <= windowEnd) {
+        if (!isOccupied(start, start + totalDuration)) {
+          if (commuteTime > 0) {
+            schedule.push({
+              start: toTimeString(start),
+              end: toTimeString(start + commuteTime),
+              label: `Commute to ${label}`,
+              type: 'commute'
+            });
+          }
+          schedule.push({
+            start: toTimeString(start + commuteTime),
+            end: toTimeString(start + commuteTime + duration),
+            label,
+            type
+          });
+          if (commuteTime > 0) {
+            schedule.push({
+              start: toTimeString(start + commuteTime + duration),
+              end: toTimeString(start + totalDuration),
+              label: `Commute back from ${label}`,
+              type: 'commute'
+            });
+          }
+          return true;
+        }
+        start++;
+      }
+      let fallback = getNextFreeStart(wake);
+      while (fallback + totalDuration <= sleep) {
+        if (!isOccupied(fallback, fallback + totalDuration)) {
+          if (commuteTime > 0) {
+            schedule.push({
+              start: toTimeString(fallback),
+              end: toTimeString(fallback + commuteTime),
+              label: `Commute to ${label}`,
+              type: 'commute'
+            });
+          }
+          schedule.push({
+            start: toTimeString(fallback + commuteTime),
+            end: toTimeString(fallback + commuteTime + duration),
+            label,
+            type
+          });
+          if (commuteTime > 0) {
+            schedule.push({
+              start: toTimeString(fallback + commuteTime + duration),
+              end: toTimeString(fallback + totalDuration),
+              label: `Commute back from ${label}`,
+              type: 'commute'
+            });
+          }
+          return true;
+        }
+        fallback++;
+      }
+      return false;
+    };
+
+    for (const meal of meals) {
+      if (meal.timeMode === 'flexible' && meal.flexDuration > 0) {
+        placeFlexBlock(meal.mealName, meal.flexDuration, meal.flexPreference || 'any', 'meal', meal.commuteTime || 0);
+      }
+    }
+
+    for (const commitment of commitments) {
+      if (commitment.timeMode === 'flexible' && commitment.flexDuration > 0) {
+        placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTime || 0);
+      }
+    }
 
     const sortedTasks = [...tasks]
       .sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
@@ -655,20 +863,22 @@ function App() {
     return `${hours} hour${hours > 1 ? 's' : ''} ${minutes} minutes`;
   }
 
-  function getNextFreeTime(from, blockedRanges, transitionGap) {
-    let time = from;
-    for (const range of blockedRanges) {
-      if (time >= range.start && time < range.end) {
-        time = range.end + transitionGap;
-      }
-    }
-    return time;
-  }
-
   function handleSubmitFeedback(taskId) {
-    if (!completionStatus || !actualDuration) {
+    console.log('handleSubmitFeedback called with taskId:', taskId);
+    console.log('completionStatus:', completionStatus);
+    console.log('actualDuration:', actualDuration);
+    console.log('actualDifficulty:', actualDifficulty);
+
+    if (!completionStatus) {
+      console.log('BLOCKED: missing completionStatus');
       return;
     }
+    if (!actualDuration) {
+      console.log('BLOCKED: missing actualDuration');
+      return;
+    }
+
+    console.log('Sending fetch request...');
     fetch(`http://localhost:8000/tasks/${taskId}/feedback`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -680,8 +890,12 @@ function App() {
         end_time: new Date().toISOString()
       })
     })
-      .then((res) => res.json())
-      .then(() => {
+      .then((res) => {
+        console.log('Response status:', res.status);
+        return res.json();
+      })
+      .then((data) => {
+        console.log('Response data:', data);
         setTasks(tasks.map((task) => {
           if (task.id === taskId) {
             return {
@@ -703,7 +917,7 @@ function App() {
           .then((data) => setHistory(data))
           .catch((err) => console.error('Failed to reload history:', err));
       })
-      .catch((err) => console.error('Failed to submit feedback:', err));
+      .catch((err) => console.error('Fetch failed:', err));
   }
 
   function calculateAccuracy(estimated, actual) {
@@ -871,17 +1085,23 @@ function App() {
   function handleEditMeal(meal) {
     setEditingMealId(meal.id);
     setEditMealName(meal.mealName);
-    setEditMealStart(meal.mealStart);
-    setEditMealEnd(meal.mealEnd);
+    setEditMealStart(meal.mealStart || '');
+    setEditMealEnd(meal.mealEnd || '');
     setEditMealCommuteTime(meal.commuteTime || 0);
+    setEditMealTimeMode(meal.timeMode || 'fixed');
+    setEditMealFlexDuration(meal.flexDuration || 30);
+    setEditMealFlexPreference(meal.flexPreference || 'any');
   }
 
   function handleUpdateMeal(mealId) {
     const updatedMeal = {
       mealName: editMealName,
-      mealStart: editMealStart,
-      mealEnd: editMealEnd,
-      commuteTime: editMealCommuteTime
+      mealStart: editMealTimeMode === 'fixed' ? editMealStart : null,
+      mealEnd: editMealTimeMode === 'fixed' ? editMealEnd : null,
+      commuteTime: editMealCommuteTime,
+      timeMode: editMealTimeMode,
+      flexDuration: editMealFlexDuration,
+      flexPreference: editMealFlexPreference
     };
     fetch(`http://localhost:8000/meals/${mealId}`, {
       method: 'PUT',
@@ -899,19 +1119,25 @@ function App() {
   function handleEditCommitment(commitment) {
     setEditingCommitmentId(commitment.id);
     setEditCommitmentName(commitment.commitmentName);
-    setEditCommitmentStart(commitment.commitmentStart);
-    setEditCommitmentEnd(commitment.commitmentEnd);
+    setEditCommitmentStart(commitment.commitmentStart || '');
+    setEditCommitmentEnd(commitment.commitmentEnd || '');
     setEditCommitmentType(commitment.commitmentType || '');
     setEditCommitmentCommuteTime(commitment.commuteTime || 0);
+    setEditCommitmentTimeMode(commitment.timeMode || 'fixed');
+    setEditCommitmentFlexDuration(commitment.flexDuration || 60);
+    setEditCommitmentFlexPreference(commitment.flexPreference || 'any');
   }
 
   function handleUpdateCommitment(commitmentId) {
     const updatedCommitment = {
       commitmentName: editCommitmentName,
-      commitmentStart: editCommitmentStart,
-      commitmentEnd: editCommitmentEnd,
+      commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null,
+      commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null,
       commitmentType: editCommitmentType,
-      commuteTime: editCommitmentCommuteTime
+      commuteTime: editCommitmentCommuteTime,
+      timeMode: editCommitmentTimeMode,
+      flexDuration: editCommitmentFlexDuration,
+      flexPreference: editCommitmentFlexPreference
     };
     fetch(`http://localhost:8000/commitments/${commitmentId}`, {
       method: 'PUT',
@@ -946,6 +1172,7 @@ function App() {
   }
 
   function handleLogActualSleep() {
+    console.log('Logging actual sleep:', { actualWakeTime, actualSleepTime });
     fetch('http://localhost:8000/sleep/actual', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1035,6 +1262,11 @@ function App() {
                       <div>
                         <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
                         <p>🌅 {block.label}</p>
+                      </div>
+                    ) : block.type === 'shower' ? (
+                      <div>
+                        <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>
+                        <p>🚿 {block.label}</p>
                       </div>
                     ) : (
                       <div>
@@ -1568,21 +1800,40 @@ function App() {
               />
             </div>
             <div>
-              <label>Start time: </label>
-              <TimePicker
-                value={mealStart}
-                onChange={setMealStart}
-                clockFormat={savedClockFormat}
-              />
+              <label>Time mode: </label>
+              <select value={mealTimeMode} onChange={(e) => setMealTimeMode(e.target.value)}>
+                <option value="fixed">Fixed time</option>
+                <option value="flexible">Flexible time</option>
+              </select>
             </div>
-            <div>
-              <label>End time: </label>
-              <TimePicker
-                value={mealEnd}
-                onChange={setMealEnd}
-                clockFormat={savedClockFormat}
-              />
-            </div>
+            {mealTimeMode === 'fixed' ? (
+              <div>
+                <div>
+                  <label>Start time: </label>
+                  <TimePicker value={mealStart} onChange={setMealStart} clockFormat={savedClockFormat} />
+                </div>
+                <div>
+                  <label>End time: </label>
+                  <TimePicker value={mealEnd} onChange={setMealEnd} clockFormat={savedClockFormat} />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div>
+                  <label>Duration (minutes): </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={mealFlexDuration}
+                    onChange={(e) => setMealFlexDuration(Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label>Preferred time: </label>
+                  <FlexPreferenceSelect value={mealFlexPreference} onChange={setMealFlexPreference} />
+                </div>
+              </div>
+            )}
             <div>
               <label>Commute time (minutes, optional): </label>
               <input
@@ -1614,21 +1865,40 @@ function App() {
                       />
                     </div>
                     <div>
-                      <label>Start time: </label>
-                      <TimePicker
-                        value={editMealStart}
-                        onChange={setEditMealStart}
-                        clockFormat={savedClockFormat}
-                      />
+                      <label>Time mode: </label>
+                      <select value={editMealTimeMode} onChange={(e) => setEditMealTimeMode(e.target.value)}>
+                        <option value="fixed">Fixed time</option>
+                        <option value="flexible">Flexible time</option>
+                      </select>
                     </div>
-                    <div>
-                      <label>End time: </label>
-                      <TimePicker
-                        value={editMealEnd}
-                        onChange={setEditMealEnd}
-                        clockFormat={savedClockFormat}
-                      />
-                    </div>
+                    {editMealTimeMode === 'fixed' ? (
+                      <div>
+                        <div>
+                          <label>Start time: </label>
+                          <TimePicker value={editMealStart} onChange={setEditMealStart} clockFormat={savedClockFormat} />
+                        </div>
+                        <div>
+                          <label>End time: </label>
+                          <TimePicker value={editMealEnd} onChange={setEditMealEnd} clockFormat={savedClockFormat} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div>
+                          <label>Duration (minutes): </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={editMealFlexDuration}
+                            onChange={(e) => setEditMealFlexDuration(Number(e.target.value))}
+                          />
+                        </div>
+                        <div>
+                          <label>Preferred time: </label>
+                          <FlexPreferenceSelect value={editMealFlexPreference} onChange={setEditMealFlexPreference} />
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label>Commute time (minutes): </label>
                       <input
@@ -1645,7 +1915,11 @@ function App() {
                 ) : (
                   <div>
                     <strong>{meal.mealName}</strong>
-                    <p>Planned: {formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
+                    {meal.timeMode === 'flexible' ? (
+                      <p>Flexible — {meal.flexDuration} minutes — {meal.flexPreference === 'any' ? 'any time' : meal.flexPreference.replace('_', ' ')}</p>
+                    ) : (
+                      <p>Planned: {formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
+                    )}
                     {meal.commuteTime > 0 && (
                       <p>Commute: {meal.commuteTime} minutes</p>
                     )}
@@ -1700,21 +1974,40 @@ function App() {
               />
             </div>
             <div>
-              <label>Start time: </label>
-              <TimePicker
-                value={commitmentStart}
-                onChange={setCommitmentStart}
-                clockFormat={savedClockFormat}
-              />
+              <label>Time mode: </label>
+              <select value={commitmentTimeMode} onChange={(e) => setCommitmentTimeMode(e.target.value)}>
+                <option value="fixed">Fixed time</option>
+                <option value="flexible">Flexible time</option>
+              </select>
             </div>
-            <div>
-              <label>End time: </label>
-              <TimePicker
-                value={commitmentEnd}
-                onChange={setCommitmentEnd}
-                clockFormat={savedClockFormat}
-              />
-            </div>
+            {commitmentTimeMode === 'fixed' ? (
+              <div>
+                <div>
+                  <label>Start time: </label>
+                  <TimePicker value={commitmentStart} onChange={setCommitmentStart} clockFormat={savedClockFormat} />
+                </div>
+                <div>
+                  <label>End time: </label>
+                  <TimePicker value={commitmentEnd} onChange={setCommitmentEnd} clockFormat={savedClockFormat} />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div>
+                  <label>Duration (minutes): </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={commitmentFlexDuration}
+                    onChange={(e) => setCommitmentFlexDuration(Number(e.target.value))}
+                  />
+                </div>
+                <div>
+                  <label>Preferred time: </label>
+                  <FlexPreferenceSelect value={commitmentFlexPreference} onChange={setCommitmentFlexPreference} />
+                </div>
+              </div>
+            )}
             <div>
               <select
                 value={commitmentType}
@@ -1763,21 +2056,40 @@ function App() {
                       />
                     </div>
                     <div>
-                      <label>Start time: </label>
-                      <TimePicker
-                        value={editCommitmentStart}
-                        onChange={setEditCommitmentStart}
-                        clockFormat={savedClockFormat}
-                      />
+                      <label>Time mode: </label>
+                      <select value={editCommitmentTimeMode} onChange={(e) => setEditCommitmentTimeMode(e.target.value)}>
+                        <option value="fixed">Fixed time</option>
+                        <option value="flexible">Flexible time</option>
+                      </select>
                     </div>
-                    <div>
-                      <label>End time: </label>
-                      <TimePicker
-                        value={editCommitmentEnd}
-                        onChange={setEditCommitmentEnd}
-                        clockFormat={savedClockFormat}
-                      />
-                    </div>
+                    {editCommitmentTimeMode === 'fixed' ? (
+                      <div>
+                        <div>
+                          <label>Start time: </label>
+                          <TimePicker value={editCommitmentStart} onChange={setEditCommitmentStart} clockFormat={savedClockFormat} />
+                        </div>
+                        <div>
+                          <label>End time: </label>
+                          <TimePicker value={editCommitmentEnd} onChange={setEditCommitmentEnd} clockFormat={savedClockFormat} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div>
+                          <label>Duration (minutes): </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={editCommitmentFlexDuration}
+                            onChange={(e) => setEditCommitmentFlexDuration(Number(e.target.value))}
+                          />
+                        </div>
+                        <div>
+                          <label>Preferred time: </label>
+                          <FlexPreferenceSelect value={editCommitmentFlexPreference} onChange={setEditCommitmentFlexPreference} />
+                        </div>
+                      </div>
+                    )}
                     <div>
                       <label>Type: </label>
                       <select
@@ -1812,7 +2124,11 @@ function App() {
                   <div>
                     <strong>{commitment.commitmentName}</strong>
                     <p>Type: {commitment.commitmentType}</p>
-                    <p>{formatTime(commitment.commitmentStart)} — {formatTime(commitment.commitmentEnd)}</p>
+                    {commitment.timeMode === 'flexible' ? (
+                      <p>Flexible — {commitment.flexDuration} minutes — {commitment.flexPreference === 'any' ? 'any time' : commitment.flexPreference.replace('_', ' ')}</p>
+                    ) : (
+                      <p>{formatTime(commitment.commitmentStart)} — {formatTime(commitment.commitmentEnd)}</p>
+                    )}
                     {commitment.commuteTime > 0 && (
                       <p>Commute: {commitment.commuteTime} minutes</p>
                     )}
@@ -2009,6 +2325,29 @@ function App() {
               onChange={(e) => setTransitionGap(Number(e.target.value))}
             />
             <button type="button" onClick={() => { setSavedTransitionGap(transitionGap); saveSetting('transitionGap', transitionGap); }}>Confirm</button>
+          </div>
+          <div>
+            <label>Shower duration (minutes): </label>
+            <input
+              type="number"
+              min="5"
+              max="60"
+              value={showerDuration}
+              onChange={(e) => setShowerDuration(Number(e.target.value))}
+            />
+            <button type="button" onClick={() => { setSavedShowerDuration(showerDuration); saveSetting('showerDuration', showerDuration); }}>Confirm</button>
+          </div>
+          <div>
+            <label>Shower preference: </label>
+            <select
+              value={showerPreference}
+              onChange={(e) => setShowerPreference(e.target.value)}
+            >
+              <option value="morning">Morning (after wake-up buffer)</option>
+              <option value="evening">Evening (before wind-down)</option>
+              <option value="both">Both morning and evening</option>
+            </select>
+            <button type="button" onClick={() => { setSavedShowerPreference(showerPreference); saveSetting('showerPreference', showerPreference); }}>Confirm</button>
           </div>
           <div>
             <label>Energy Pattern: </label>

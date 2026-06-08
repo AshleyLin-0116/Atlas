@@ -33,9 +33,41 @@ def init_db():
             actual_duration REAL,
             actual_difficulty REAL,
             completion_status TEXT,
-            category TEXT
+            category TEXT,
+            workOnDueDate INTEGER DEFAULT 1,
+            description TEXT
         )
     """)
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN category TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN workOnDueDate INTEGER DEFAULT 1")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN description TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN actual_duration REAL")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN actual_difficulty REAL")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE tasks ADD COLUMN completion_status TEXT")
+        conn.commit()
+    except:
+        pass
     conn.execute("""
         CREATE TABLE IF NOT EXISTS task_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,70 +89,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS meals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             mealName TEXT NOT NULL,
-            mealStart TEXT NOT NULL,
-            mealEnd TEXT NOT NULL
+            mealStart TEXT,
+            mealEnd TEXT,
+            commuteTime INTEGER DEFAULT 0,
+            actual_start TEXT,
+            actual_end TEXT,
+            timeMode TEXT DEFAULT 'fixed',
+            flexDuration INTEGER DEFAULT 0,
+            flexPreference TEXT DEFAULT 'any'
         )
     """)
     try:
         conn.execute("ALTER TABLE meals ADD COLUMN commuteTime INTEGER DEFAULT 0")
-        conn.commit()
-    except:
-        pass
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS commitments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            commitmentName TEXT NOT NULL,
-            commitmentStart TEXT NOT NULL,
-            commitmentEnd TEXT NOT NULL,
-            commitmentType TEXT
-        )
-    """)
-    try:
-        conn.execute("ALTER TABLE commitments ADD COLUMN commuteTime INTEGER DEFAULT 0")
-        conn.commit()
-    except:
-        pass
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sleep_schedule (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wakeTime TEXT NOT NULL,
-            sleepTime TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS settings (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS tasks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            taskName TEXT NOT NULL,
-            deadline TEXT NOT NULL,
-            difficulty REAL NOT NULL,
-            importance REAL NOT NULL,
-            userPreference REAL NOT NULL,
-            duration INTEGER NOT NULL,
-            taskType TEXT NOT NULL,
-            actual_duration REAL,
-            actual_difficulty REAL,
-            completion_status TEXT,
-            category TEXT
-        )
-    """)
-    try:
-        conn.execute("ALTER TABLE tasks ADD COLUMN category TEXT")
-        conn.commit()
-    except:
-        pass
-    try:
-        conn.execute("ALTER TABLE tasks ADD COLUMN workOnDueDate INTEGER DEFAULT 1")
-        conn.commit()
-    except:
-        pass
-    try:
-        conn.execute("ALTER TABLE tasks ADD COLUMN description TEXT")
         conn.commit()
     except:
         pass
@@ -135,6 +115,63 @@ def init_db():
     except:
         pass
     try:
+        conn.execute("ALTER TABLE meals ADD COLUMN timeMode TEXT DEFAULT 'fixed'")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE meals ADD COLUMN flexDuration INTEGER DEFAULT 0")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE meals ADD COLUMN flexPreference TEXT DEFAULT 'any'")
+        conn.commit()
+    except:
+        pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS commitments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            commitmentName TEXT NOT NULL,
+            commitmentStart TEXT,
+            commitmentEnd TEXT,
+            commitmentType TEXT,
+            commuteTime INTEGER DEFAULT 0,
+            timeMode TEXT DEFAULT 'fixed',
+            flexDuration INTEGER DEFAULT 0,
+            flexPreference TEXT DEFAULT 'any'
+        )
+    """)
+    try:
+        conn.execute("ALTER TABLE commitments ADD COLUMN commuteTime INTEGER DEFAULT 0")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE commitments ADD COLUMN timeMode TEXT DEFAULT 'fixed'")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE commitments ADD COLUMN flexDuration INTEGER DEFAULT 0")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE commitments ADD COLUMN flexPreference TEXT DEFAULT 'any'")
+        conn.commit()
+    except:
+        pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sleep_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wakeTime TEXT NOT NULL,
+            sleepTime TEXT NOT NULL,
+            actual_wake TEXT,
+            actual_sleep TEXT
+        )
+    """)
+    try:
         conn.execute("ALTER TABLE sleep_schedule ADD COLUMN actual_wake TEXT")
         conn.commit()
     except:
@@ -144,6 +181,12 @@ def init_db():
         conn.commit()
     except:
         pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -161,6 +204,8 @@ class Task(BaseModel):
     actual_difficulty: Optional[float] = None
     completion_status: Optional[str] = None
     category: Optional[str] = None
+    workOnDueDate: Optional[bool] = True
+    description: Optional[str] = None
 
 class TaskFeedback(BaseModel):
     actual_duration: float
@@ -171,61 +216,38 @@ class TaskFeedback(BaseModel):
 
 class Meal(BaseModel):
     mealName: str
-    mealStart: str
-    mealEnd: str
+    mealStart: Optional[str] = None
+    mealEnd: Optional[str] = None
     commuteTime: Optional[int] = 0
-
-class Commitment(BaseModel):
-    commitmentName: str
-    commitmentStart: str
-    commitmentEnd: str
-    commitmentType: Optional[str] = None
-    commuteTime: Optional[int] = 0
-
-class SleepSchedule(BaseModel):
-    wakeTime: str
-    sleepTime: str
-
-class Setting(BaseModel):
-    key: str
-    value: str
-
-class Task(BaseModel):
-    taskName: str
-    deadline: str
-    difficulty: float
-    importance: float
-    userPreference: float
-    duration: int
-    taskType: str
-    actual_duration: Optional[float] = None
-    actual_difficulty: Optional[float] = None
-    completion_status: Optional[str] = None
-    category: Optional[str] = None
-    workOnDueDate: Optional[bool] = True
-
-class Task(BaseModel):
-    taskName: str
-    deadline: str
-    difficulty: float
-    importance: float
-    userPreference: float
-    duration: int
-    taskType: str
-    actual_duration: Optional[float] = None
-    actual_difficulty: Optional[float] = None
-    completion_status: Optional[str] = None
-    category: Optional[str] = None
-    workOnDueDate: Optional[bool] = True
-    description: Optional[str] = None
+    timeMode: Optional[str] = 'fixed'
+    flexDuration: Optional[int] = 0
+    flexPreference: Optional[str] = 'any'
 
 class ActualMealTime(BaseModel):
     actual_start: Optional[str] = None
     actual_end: Optional[str] = None
 
+class Commitment(BaseModel):
+    commitmentName: str
+    commitmentStart: Optional[str] = None
+    commitmentEnd: Optional[str] = None
+    commitmentType: Optional[str] = None
+    commuteTime: Optional[int] = 0
+    timeMode: Optional[str] = 'fixed'
+    flexDuration: Optional[int] = 0
+    flexPreference: Optional[str] = 'any'
+
+class SleepSchedule(BaseModel):
+    wakeTime: str
+    sleepTime: str
+
 class ActualSleepTime(BaseModel):
     actual_wake: Optional[str] = None
     actual_sleep: Optional[str] = None
+
+class Setting(BaseModel):
+    key: str
+    value: str
 
 @app.get("/")
 def read_root():
@@ -253,6 +275,29 @@ def add_task(task: Task):
     result = conn.execute("SELECT * FROM tasks WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
     return dict(result)
+
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, task: Task):
+    conn = get_db()
+    try:
+        conn.execute(
+            """UPDATE tasks SET
+            taskName = ?, deadline = ?, difficulty = ?, importance = ?,
+            userPreference = ?, duration = ?, taskType = ?, category = ?,
+            workOnDueDate = ?, description = ?
+            WHERE id = ?""",
+            (task.taskName, task.deadline, task.difficulty, task.importance,
+            task.userPreference, task.duration, task.taskType, task.category,
+            task.workOnDueDate, task.description, task_id)
+        )
+        conn.commit()
+        result = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        conn.close()
+        return dict(result)
+    except Exception as e:
+        conn.close()
+        print(f"Error updating task: {e}")
+        raise
 
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int):
@@ -287,29 +332,6 @@ def submit_feedback(task_id: int, feedback: TaskFeedback):
     conn.close()
     return {"message": "Feedback saved"}
 
-@app.put("/tasks/{task_id}")
-def update_task(task_id: int, task: Task):
-    conn = get_db()
-    try:
-        conn.execute(
-            """UPDATE tasks SET
-            taskName = ?, deadline = ?, difficulty = ?, importance = ?,
-            userPreference = ?, duration = ?, taskType = ?, category = ?,
-            workOnDueDate = ?, description = ?
-            WHERE id = ?""",
-            (task.taskName, task.deadline, task.difficulty, task.importance,
-            task.userPreference, task.duration, task.taskType, task.category,
-            task.workOnDueDate, task.description, task_id)
-        )
-        conn.commit()
-        result = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        conn.close()
-        return dict(result)
-    except Exception as e:
-        conn.close()
-        print(f"Error updating task: {e}")
-        raise
-
 @app.get("/history")
 def get_history():
     conn = get_db()
@@ -328,23 +350,14 @@ def get_meals():
 def add_meal(meal: Meal):
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO meals (mealName, mealStart, mealEnd, commuteTime) VALUES (?, ?, ?, ?)",
-        (meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime)
+        """INSERT INTO meals 
+        (mealName, mealStart, mealEnd, commuteTime, timeMode, flexDuration, flexPreference) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime,
+        meal.timeMode, meal.flexDuration, meal.flexPreference)
     )
     conn.commit()
-    meal_id = cursor.lastrowid
-    conn.close()
-    return {"id": meal_id, **meal.model_dump()}
-
-@app.patch("/meals/{meal_id}/actual")
-def log_actual_meal(meal_id: int, data: ActualMealTime):
-    conn = get_db()
-    conn.execute(
-        "UPDATE meals SET actual_start = ?, actual_end = ? WHERE id = ?",
-        (data.actual_start, data.actual_end, meal_id)
-    )
-    conn.commit()
-    result = conn.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone()
+    result = conn.execute("SELECT * FROM meals WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
     return dict(result)
 
@@ -352,9 +365,23 @@ def log_actual_meal(meal_id: int, data: ActualMealTime):
 def update_meal(meal_id: int, meal: Meal):
     conn = get_db()
     conn.execute(
-        """UPDATE meals SET mealName = ?, mealStart = ?, mealEnd = ?, commuteTime = ?
+        """UPDATE meals SET mealName = ?, mealStart = ?, mealEnd = ?, 
+        commuteTime = ?, timeMode = ?, flexDuration = ?, flexPreference = ?
         WHERE id = ?""",
-        (meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime, meal_id)
+        (meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime,
+        meal.timeMode, meal.flexDuration, meal.flexPreference, meal_id)
+    )
+    conn.commit()
+    result = conn.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone()
+    conn.close()
+    return dict(result)
+
+@app.patch("/meals/{meal_id}/actual")
+def log_actual_meal(meal_id: int, data: ActualMealTime):
+    conn = get_db()
+    conn.execute(
+        "UPDATE meals SET actual_start = ?, actual_end = ? WHERE id = ?",
+        (data.actual_start, data.actual_end, meal_id)
     )
     conn.commit()
     result = conn.execute("SELECT * FROM meals WHERE id = ?", (meal_id,)).fetchone()
@@ -380,23 +407,31 @@ def get_commitments():
 def add_commitment(commitment: Commitment):
     conn = get_db()
     cursor = conn.execute(
-        "INSERT INTO commitments (commitmentName, commitmentStart, commitmentEnd, commitmentType, commuteTime) VALUES (?, ?, ?, ?, ?)",
-        (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd, commitment.commitmentType, commitment.commuteTime)
+        """INSERT INTO commitments 
+        (commitmentName, commitmentStart, commitmentEnd, commitmentType, 
+        commuteTime, timeMode, flexDuration, flexPreference) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
+        commitment.commitmentType, commitment.commuteTime,
+        commitment.timeMode, commitment.flexDuration, commitment.flexPreference)
     )
     conn.commit()
-    commitment_id = cursor.lastrowid
+    result = conn.execute("SELECT * FROM commitments WHERE id = ?", (cursor.lastrowid,)).fetchone()
     conn.close()
-    return {"id": commitment_id, **commitment.model_dump()}
+    return dict(result)
 
 @app.put("/commitments/{commitment_id}")
 def update_commitment(commitment_id: int, commitment: Commitment):
     conn = get_db()
     conn.execute(
         """UPDATE commitments SET commitmentName = ?, commitmentStart = ?,
-        commitmentEnd = ?, commitmentType = ?, commuteTime = ?
+        commitmentEnd = ?, commitmentType = ?, commuteTime = ?,
+        timeMode = ?, flexDuration = ?, flexPreference = ?
         WHERE id = ?""",
         (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
-        commitment.commitmentType, commitment.commuteTime, commitment_id)
+        commitment.commitmentType, commitment.commuteTime,
+        commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
+        commitment_id)
     )
     conn.commit()
     result = conn.execute("SELECT * FROM commitments WHERE id = ?", (commitment_id,)).fetchone()
