@@ -174,6 +174,7 @@ function App() {
   const [savedShowerDuration, setSavedShowerDuration] = useState(15);
   const [showerPreference, setShowerPreference] = useState('morning');
   const [savedShowerPreference, setSavedShowerPreference] = useState('morning');
+  const [scheduleSummary, setScheduleSummary] = useState([]);
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -878,6 +879,45 @@ function App() {
   function handleGenerateSchedule() {
     const schedule = generateSchedule();
     setGeneratedSchedule(schedule);
+    setScheduleSummary(generateScheduleSummary(schedule));
+  }
+
+  function generateScheduleSummary(schedule) {
+    const summary = [];
+
+    if (actualWakeTime || actualSleepTime) {
+      const parts = [];
+      if (actualWakeTime) {
+        parts.push(`wake shifted to ${formatTime(actualWakeTime)}`);
+      }
+      if (actualSleepTime) {
+        parts.push(`sleep shifted to ${formatTime(actualSleepTime)}`);
+      }
+      summary.push(`Using actual sleep times — ${parts.join(', ')}`);
+    }
+
+    const multipliers = getCategoryMultipliers();
+    const adjustedTasks = tasks.filter((t) => {
+      return t.category && multipliers[t.category] && multipliers[t.category] !== 1;
+    });
+    adjustedTasks.forEach((t) => {
+      const m = multipliers[t.category];
+      const adjusted = Math.round(Number(t.duration) * m);
+      const diff = adjusted - Number(t.duration);
+      summary.push(
+        `${t.taskName}: duration adjusted from ${t.duration} to ${adjusted} min (${diff > 0 ? '+' : ''}${diff} min based on ${t.category} history)`
+      );
+    });
+
+    const scheduledTaskNames = schedule
+      .filter((b) => b.type === 'study' || b.type === 'peak')
+      .map((b) => b.label);
+    const missingTasks = tasks.filter((t) => !scheduledTaskNames.includes(t.taskName));
+    missingTasks.forEach((t) => {
+      summary.push(`${t.taskName} could not be fully scheduled — not enough free time today`);
+    });
+
+    return summary;
   }
 
   function getBlockDuration(start, end) {
@@ -1000,6 +1040,109 @@ function App() {
       }
     });
     return categories;
+  }
+
+  function calculateWeeklyStats() {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    const weekHistory = history.filter((h) => {
+      if (!h.completed_at) {
+        return false;
+      }
+      return new Date(h.completed_at) >= oneWeekAgo;
+    });
+
+    const totalEstimated = weekHistory.reduce((sum, h) => sum + (h.estimated_duration || 0), 0);
+    const totalActual = weekHistory.reduce((sum, h) => sum + (h.actual_duration || 0), 0);
+    const completed = weekHistory.filter((h) => h.completion_status === 'Completed').length;
+    const partial = weekHistory.filter((h) => h.completion_status === 'Partially Completed').length;
+    const notCompleted = weekHistory.filter((h) => h.completion_status === 'Not Completed').length;
+
+    const byCategory = {};
+    weekHistory.forEach((h) => {
+      if (!h.category) {
+        return;
+      }
+      if (!byCategory[h.category]) {
+        byCategory[h.category] = { estimated: 0, actual: 0, count: 0 };
+      }
+      byCategory[h.category].estimated += h.estimated_duration || 0;
+      byCategory[h.category].actual += h.actual_duration || 0;
+      byCategory[h.category].count++;
+    });
+
+    const overallAccuracy = weekHistory.filter((h) => h.estimated_duration && h.actual_duration).length > 0
+      ? (weekHistory
+          .filter((h) => h.estimated_duration && h.actual_duration)
+          .reduce((sum, h) => sum + Math.min((h.estimated_duration / h.actual_duration) * 100, 100), 0)
+        / weekHistory.filter((h) => h.estimated_duration && h.actual_duration).length
+        ).toFixed(1)
+      : null;
+
+    return {
+      count: weekHistory.length,
+      totalEstimated,
+      totalActual,
+      completed,
+      partial,
+      notCompleted,
+      byCategory,
+      overallAccuracy
+    };
+  }
+
+  function generateSuggestions() {
+    const suggestions = [];
+
+    const multipliers = getCategoryMultipliers();
+    for (const [cat, m] of Object.entries(multipliers)) {
+      if (m > 1.3) {
+        suggestions.push(`You tend to underestimate ${cat} tasks by ${((m - 1) * 100).toFixed(0)}% — try adding ${Math.round((m - 1) * 100)}% more time when estimating.`);
+      } else if (m < 0.7) {
+        suggestions.push(`You finish ${cat} tasks faster than expected — your estimates may be too conservative.`);
+      }
+    }
+
+    const best = getMostProductivePeriod();
+    if (best.period && parseFloat(best.rate) >= 70) {
+      suggestions.push(`Your best work happens during ${best.period} (${best.rate}% completion rate) — try scheduling deep work then.`);
+    }
+
+    const overdueTasks = tasks.filter((t) => {
+      if (t.completion_status) {
+        return false;
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return new Date(t.deadline) < today;
+    });
+    if (overdueTasks.length > 0) {
+      suggestions.push(`You have ${overdueTasks.length} overdue task${overdueTasks.length > 1 ? 's' : ''}: ${overdueTasks.map((t) => t.taskName).join(', ')}.`);
+    }
+
+    const dueTodayOrTomorrow = tasks.filter((t) => {
+      if (t.completion_status) {
+        return false;
+      }
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const deadline = new Date(t.deadline);
+      deadline.setHours(0, 0, 0, 0);
+      return deadline <= tomorrow;
+    });
+    if (dueTodayOrTomorrow.length > 0 && overdueTasks.length === 0) {
+      suggestions.push(`${dueTodayOrTomorrow.map((t) => t.taskName).join(', ')} ${dueTodayOrTomorrow.length > 1 ? 'are' : 'is'} due today or tomorrow — prioritize these.`);
+    }
+
+    const week = calculateWeeklyStats();
+    if (week.count >= 3 && week.overallAccuracy && parseFloat(week.overallAccuracy) < 60) {
+      suggestions.push(`Your estimation accuracy this week is ${week.overallAccuracy}% — try breaking tasks into smaller chunks for better estimates.`);
+    }
+
+    return suggestions;
   }
 
   function getCategoryMultipliers() {
@@ -1267,6 +1410,20 @@ function App() {
         <section id="dashboard">
           <h2>Dashboard</h2>
           {(() => {
+            const suggestions = generateSuggestions();
+            if (suggestions.length > 0) {
+              return (
+                <div>
+                  <h3>Suggestions</h3>
+                  {suggestions.map((s, i) => (
+                    <p key={i}>💡 {s}</p>
+                  ))}
+                </div>
+              );
+            }
+            return null;
+          })()}
+          {(() => {
             const result = calculateAvailableTime();
             if (!result) {
               return <p>Set your wake and sleep times in Availability to see your schedule breakdown.</p>;
@@ -1295,6 +1452,14 @@ function App() {
               <button type="button" onClick={handleGenerateSchedule}>Generate Schedule</button>
               {(actualWakeTime || actualSleepTime) && (
                 <p>Using actual sleep times: {actualWakeTime ? `woke at ${formatTime(actualWakeTime)}` : ''}{actualWakeTime && actualSleepTime ? ', ' : ''}{actualSleepTime ? `slept at ${formatTime(actualSleepTime)}` : ''}</p>
+              )}
+              {scheduleSummary.length > 0 && (
+                <div>
+                  <h4>Schedule Notes</h4>
+                  {scheduleSummary.map((note, i) => (
+                    <p key={i}>⚠ {note}</p>
+                  ))}
+                </div>
               )}
               {generatedSchedule.length === 0 ? (
                 <p>Click Generate Schedule to see your day.</p>
@@ -2243,6 +2408,35 @@ function App() {
             <p>No completed tasks yet. Complete a task to see your history.</p>
           ) : (
             <div>
+              <h3>This Week</h3>
+              {(() => {
+                const week = calculateWeeklyStats();
+                if (week.count === 0) {
+                  return <p>No tasks completed in the last 7 days.</p>;
+                }
+                return (
+                  <div>
+                    <p>Tasks this week: {week.count} ({week.completed} completed, {week.partial} partial, {week.notCompleted} not completed)</p>
+                    <p>Time estimated: {week.totalEstimated} minutes ({(week.totalEstimated / 60).toFixed(1)} hours)</p>
+                    <p>Time actually spent: {week.totalActual} minutes ({(week.totalActual / 60).toFixed(1)} hours)</p>
+                    {week.overallAccuracy && (
+                      <p>Estimation accuracy this week: {week.overallAccuracy}%</p>
+                    )}
+                    {Object.keys(week.byCategory).length > 0 && (
+                      <div>
+                        <h4>By Category</h4>
+                        {Object.entries(week.byCategory).map(([cat, data]) => (
+                          <div key={cat}>
+                            <strong>{cat}</strong>
+                            <p>{data.count} task{data.count !== 1 ? 's' : ''} — {data.actual} minutes actual / {data.estimated} minutes estimated</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               <h3>Summary</h3>
               <p>Total tasks completed: {history.filter((h) => h.completion_status === 'Completed').length}</p>
               <p>Total tasks partially completed: {history.filter((h) => h.completion_status === 'Partially Completed').length}</p>
@@ -2312,21 +2506,41 @@ function App() {
                 <div>
                   {(() => {
                     const best = getMostProductivePeriod();
-                    if (best.period) {
-                      return <p>Most productive period: <strong>{best.period}</strong> ({best.rate}% completion rate)</p>;
+                    if (!best.period) {
+                      return null;
                     }
-                    return null;
+                    return (
+                      <p>Most productive period: <strong>{best.period}</strong> ({best.rate}% completion rate)</p>
+                    );
                   })()}
                   {Object.entries(calculateProductiveTime()).map(([period, data]) => {
                     if (data.total === 0) {
                       return null;
                     }
+                    const rate = ((data.completed / data.total) * 100).toFixed(1);
+                    const periodHistory = history.filter((h) => {
+                      if (!h.start_time) {
+                        return false;
+                      }
+                      const hour = new Date(h.start_time).getHours();
+                      return hour >= data.start && hour < data.end;
+                    });
+                    const avgActual = periodHistory.filter((h) => h.actual_duration).length > 0
+                      ? (periodHistory.reduce((sum, h) => sum + (h.actual_duration || 0), 0) / periodHistory.filter((h) => h.actual_duration).length).toFixed(1)
+                      : null;
+                    const avgAccuracy = periodHistory.filter((h) => h.estimated_duration && h.actual_duration).length > 0
+                      ? (periodHistory
+                          .filter((h) => h.estimated_duration && h.actual_duration)
+                          .reduce((sum, h) => sum + Math.min((h.estimated_duration / h.actual_duration) * 100, 100), 0)
+                        / periodHistory.filter((h) => h.estimated_duration && h.actual_duration).length
+                        ).toFixed(1)
+                      : null;
                     return (
                       <div key={period}>
                         <strong>{period}</strong>
-                        <p>Tasks attempted: {data.total}</p>
-                        <p>Tasks completed: {data.completed}</p>
-                        <p>Completion rate: {((data.completed / data.total) * 100).toFixed(1)}%</p>
+                        <p>Tasks attempted: {data.total} — completed: {data.completed} — completion rate: {rate}%</p>
+                        {avgActual && <p>Average actual duration: {avgActual} minutes</p>}
+                        {avgAccuracy && <p>Average estimation accuracy: {avgAccuracy}%</p>}
                       </div>
                     );
                   })}
