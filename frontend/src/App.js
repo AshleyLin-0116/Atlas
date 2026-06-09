@@ -463,10 +463,14 @@ function App() {
     }
     const toMinutes = (time) => {
       const [h, m] = time.split(':').map(Number);
-      return h * 60 + m;
+      const total = h * 60 + m;
+      return total === 0 ? 1440 : total;
     };
     const wake = toMinutes(wakeTime);
-    const sleep = toMinutes(sleepTime);
+    let sleep = toMinutes(sleepTime);
+    if (sleep <= wake) {
+      sleep += 1440;
+    }
     const totalTime = sleep - wake;
     const mealTime = meals.reduce((total, meal) => {
       if (meal.timeMode === 'flexible') {
@@ -508,16 +512,21 @@ function App() {
     }
     const toMinutes = (time) => {
       const [h, m] = time.split(':').map(Number);
-      return h * 60 + m;
+      const total = h * 60 + m;
+      return total === 0 ? 1440 : total;
     };
     const toTimeString = (minutes) => {
-      const h = Math.floor(minutes / 60);
-      const m = minutes % 60;
+      const wrapped = minutes % 1440;
+      const h = Math.floor(wrapped / 60);
+      const m = wrapped % 60;
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
     const wake = toMinutes(wakeTime) + savedMorningBuffer;
-    const sleep = toMinutes(sleepTime) - savedNightBuffer;
+    let sleep = toMinutes(sleepTime) - savedNightBuffer;
+    if (sleep <= toMinutes(wakeTime)) {
+      sleep += 1440;
+    }
 
     const blockedRanges = [
       ...meals.flatMap((meal) => {
@@ -574,8 +583,9 @@ function App() {
       })
     ].sort((a, b) => a.start - b.start);
 
+    const showerBlocks = [];
     if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
-      blockedRanges.push({
+      showerBlocks.push({
         start: wake,
         end: wake + savedShowerDuration,
         label: 'Shower',
@@ -584,12 +594,16 @@ function App() {
     }
     if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
       const eveningShowerStart = toMinutes(sleepTime) - savedNightBuffer - savedShowerDuration;
-      blockedRanges.push({
+      showerBlocks.push({
         start: eveningShowerStart,
         end: eveningShowerStart + savedShowerDuration,
         label: 'Shower',
         type: 'shower'
       });
+    }
+
+    for (const s of showerBlocks) {
+      blockedRanges.push(s);
     }
     blockedRanges.sort((a, b) => a.start - b.start);
 
@@ -602,31 +616,12 @@ function App() {
       type: 'buffer'
     });
 
-    if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
-      schedule.push({
-        start: toTimeString(wake),
-        end: toTimeString(wake + savedShowerDuration),
-        label: 'Shower',
-        type: 'shower'
-      });
-    }
-
     for (const range of blockedRanges) {
       schedule.push({
         start: toTimeString(range.start),
         end: toTimeString(range.end),
         label: range.label,
         type: range.type
-      });
-    }
-
-    if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
-      const eveningShowerStart = toMinutes(sleepTime) - savedNightBuffer - savedShowerDuration;
-      schedule.push({
-        start: toTimeString(eveningShowerStart),
-        end: toTimeString(eveningShowerStart + savedShowerDuration),
-        label: 'Shower',
-        type: 'shower'
       });
     }
 
@@ -783,8 +778,13 @@ function App() {
       }
     }
 
+    const categoryMultipliers = getCategoryMultipliers();
+
     for (const task of orderedTasks) {
-      let remaining = Number(task.duration);
+      const multiplier = task.category && categoryMultipliers[task.category]
+        ? categoryMultipliers[task.category]
+        : 1;
+      let remaining = Math.round(Number(task.duration) * multiplier);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
       let currentTime = getNextFreeStart(wake);
 
@@ -857,7 +857,12 @@ function App() {
       const [h, m] = time.split(':').map(Number);
       return h * 60 + m;
     };
-    const diff = toMinutes(end) - toMinutes(start);
+    let startM = toMinutes(start);
+    let endM = toMinutes(end);
+    if (endM <= startM) {
+      endM += 1440;
+    }
+    const diff = endM - startM;
     const hours = Math.floor(diff / 60);
     const minutes = diff % 60;
     if (hours === 0) {
@@ -967,6 +972,27 @@ function App() {
       }
     });
     return categories;
+  }
+
+  function getCategoryMultipliers() {
+    const categories = {};
+    history.forEach((h) => {
+      if (!h.category || !h.estimated_duration || !h.actual_duration || h.actual_duration === 0) return;
+      if (!categories[h.category]) {
+        categories[h.category] = { totalEstimated: 0, totalActual: 0, count: 0 };
+      }
+      categories[h.category].totalEstimated += h.estimated_duration;
+      categories[h.category].totalActual += h.actual_duration;
+      categories[h.category].count++;
+    });
+
+    const multipliers = {};
+    for (const [cat, data] of Object.entries(categories)) {
+      if (data.count >= 2) {
+        multipliers[cat] = data.totalActual / data.totalEstimated;
+      }
+    }
+    return multipliers;
   }
 
   function handleStartTask(taskId) {
@@ -1485,7 +1511,23 @@ function App() {
                   <p>Difficulty: {task.difficulty}</p>
                   <p>Importance: {task.importance}</p>
                   <p>Personal Priority: {task.userPreference}</p>
-                  <p>Duration: {task.duration} minutes</p>
+                  {(() => {
+                    const multipliers = getCategoryMultipliers();
+                    const multiplier = task.category && multipliers[task.category]
+                      ? multipliers[task.category]
+                      : 1;
+                    const adjusted = Math.round(Number(task.duration) * multiplier);
+                    return (
+                      <div>
+                        <p>Duration: {task.duration} minutes (estimated)</p>
+                        {multiplier !== 1 && (
+                          <p>Adjusted duration: {adjusted} minutes
+                            ({multiplier > 1 ? '+' : ''}{((multiplier - 1) * 100).toFixed(0)}% based on your {task.category} history)
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <p>Priority Score: {calculatePriorityScore(task)}</p>
                   <p>Work on due date: {task.workOnDueDate ? 'Yes' : 'No'}</p>
                   <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
@@ -2197,7 +2239,19 @@ function App() {
                     <p>Tasks tracked: {stats.count}</p>
                     <p>Average estimated duration: {(stats.totalEstimated / stats.count).toFixed(1)} minutes</p>
                     <p>Average actual duration: {(stats.totalActual / stats.count).toFixed(1)} minutes</p>
-                    <p>Average accuracy: {(stats.totalAccuracy / stats.count).toFixed(1)}%</p>
+                    {(() => {
+                      const multipliers = getCategoryMultipliers();
+                      const m = multipliers[category];
+                      if (!m) return <p>Not enough data to adjust estimates yet (need 2+ completed tasks).</p>;
+                      return (
+                        <p>
+                          Duration multiplier: {m.toFixed(2)}×
+                          {m > 1
+                            ? ` — you typically take ${((m - 1) * 100).toFixed(0)}% longer than estimated`
+                            : ` — you typically finish ${((1 - m) * 100).toFixed(0)}% faster than estimated`}
+                        </p>
+                      );
+                    })()}
                     <p>Completed: {stats.completed} | Partially: {stats.partiallyCompleted} | Not completed: {stats.notCompleted}</p>
                   </div>
                 ))
