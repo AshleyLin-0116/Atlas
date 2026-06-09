@@ -203,6 +203,12 @@ function App() {
           setWakeTime(data.wakeTime);
           setSleepTime(data.sleepTime);
           setSleepScheduleSaved(true);
+          if (data.actual_wake) {
+            setActualWakeTime(data.actual_wake);
+          }
+          if (data.actual_sleep) {
+            setActualSleepTime(data.actual_sleep);
+          }
         }
       })
       .catch((err) => console.error('Failed to load sleep schedule:', err));
@@ -447,7 +453,20 @@ function App() {
     const importance = Number(task.importance) / 10;
     const userPreference = Number(task.userPreference) / 10;
     const difficulty = Number(task.difficulty) / 10;
-    const consistency = 0.5;
+
+    let consistency = 0.5;
+    if (task.category) {
+      const categoryHistory = history.filter(
+        (h) => h.category === task.category && h.completion_status
+      );
+      if (categoryHistory.length >= 2) {
+        const completed = categoryHistory.filter(
+          (h) => h.completion_status === 'Completed'
+        ).length;
+        consistency = completed / categoryHistory.length;
+      }
+    }
+
     const score =
       0.35 * urgency +
       0.25 * importance +
@@ -466,9 +485,13 @@ function App() {
       const total = h * 60 + m;
       return total === 0 ? 1440 : total;
     };
-    const wake = toMinutes(wakeTime);
-    let sleep = toMinutes(sleepTime);
-    if (sleep <= wake) {
+
+    const effectiveWake = actualWakeTime || wakeTime;
+    const effectiveSleep = actualSleepTime || sleepTime;
+
+    const wake = toMinutes(effectiveWake) + savedMorningBuffer;
+    let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
+    if (sleep <= toMinutes(effectiveWake)) {
       sleep += 1440;
     }
     const totalTime = sleep - wake;
@@ -522,9 +545,12 @@ function App() {
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
-    const wake = toMinutes(wakeTime) + savedMorningBuffer;
-    let sleep = toMinutes(sleepTime) - savedNightBuffer;
-    if (sleep <= toMinutes(wakeTime)) {
+    const effectiveWake = actualWakeTime || wakeTime;
+    const effectiveSleep = actualSleepTime || sleepTime;
+
+    const wake = toMinutes(effectiveWake) + savedMorningBuffer;
+    let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
+    if (sleep <= toMinutes(effectiveWake)) {
       sleep += 1440;
     }
 
@@ -533,22 +559,24 @@ function App() {
         if (meal.timeMode === 'flexible' || !meal.mealStart || !meal.mealEnd) {
           return [];
         }
+        const start = meal.actual_start || meal.mealStart;
+        const end = meal.actual_end || meal.mealEnd;
         const blocks = [{
-          start: toMinutes(meal.mealStart),
-          end: toMinutes(meal.mealEnd),
+          start: toMinutes(start),
+          end: toMinutes(end),
           label: meal.mealName,
           type: 'meal'
         }];
         if (meal.commuteTime > 0) {
           blocks.unshift({
-            start: toMinutes(meal.mealStart) - meal.commuteTime,
-            end: toMinutes(meal.mealStart),
+            start: toMinutes(start) - meal.commuteTime,
+            end: toMinutes(start),
             label: `Commute to ${meal.mealName}`,
             type: 'commute'
           });
           blocks.push({
-            start: toMinutes(meal.mealEnd),
-            end: toMinutes(meal.mealEnd) + meal.commuteTime,
+            start: toMinutes(end),
+            end: toMinutes(end) + meal.commuteTime,
             label: `Commute back from ${meal.mealName}`,
             type: 'commute'
           });
@@ -593,7 +621,7 @@ function App() {
       });
     }
     if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
-      const eveningShowerStart = toMinutes(sleepTime) - savedNightBuffer - savedShowerDuration;
+      const eveningShowerStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
       showerBlocks.push({
         start: eveningShowerStart,
         end: eveningShowerStart + savedShowerDuration,
@@ -610,7 +638,7 @@ function App() {
     const schedule = [];
 
     schedule.push({
-      start: toTimeString(toMinutes(wakeTime)),
+      start: toTimeString(toMinutes(effectiveWake)),
       end: toTimeString(wake),
       label: 'Morning routine',
       type: 'buffer'
@@ -626,8 +654,8 @@ function App() {
     }
 
     schedule.push({
-      start: toTimeString(toMinutes(sleepTime) - savedNightBuffer),
-      end: toTimeString(toMinutes(sleepTime)),
+      start: toTimeString(toMinutes(effectiveSleep) - savedNightBuffer),
+      end: toTimeString(toMinutes(effectiveSleep)),
       label: 'Wind down',
       type: 'buffer'
     });
@@ -1265,6 +1293,9 @@ function App() {
           ) : (
             <div>
               <button type="button" onClick={handleGenerateSchedule}>Generate Schedule</button>
+              {(actualWakeTime || actualSleepTime) && (
+                <p>Using actual sleep times: {actualWakeTime ? `woke at ${formatTime(actualWakeTime)}` : ''}{actualWakeTime && actualSleepTime ? ', ' : ''}{actualSleepTime ? `slept at ${formatTime(actualSleepTime)}` : ''}</p>
+              )}
               {generatedSchedule.length === 0 ? (
                 <p>Click Generate Schedule to see your day.</p>
               ) : (
@@ -1528,7 +1559,24 @@ function App() {
                       </div>
                     );
                   })()}
-                  <p>Priority Score: {calculatePriorityScore(task)}</p>
+                  {(() => {
+                    const categoryHistory = history.filter(
+                      (h) => h.category === task.category && h.completion_status
+                    );
+                    const hasData = task.category && categoryHistory.length >= 2;
+                    const completed = hasData
+                      ? categoryHistory.filter((h) => h.completion_status === 'Completed').length
+                      : null;
+                    const rate = hasData ? ((completed / categoryHistory.length) * 100).toFixed(0) : null;
+                    return (
+                      <div>
+                        <p>Priority Score: {calculatePriorityScore(task)}</p>
+                        {hasData && (
+                          <p>Consistency: {rate}% completion rate in {task.category}</p>
+                        )}
+                      </div>
+                    );
+                  })()}
                   <p>Work on due date: {task.workOnDueDate ? 'Yes' : 'No'}</p>
                   <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
                   {task.completion_status ? (
