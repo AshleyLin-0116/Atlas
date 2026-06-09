@@ -88,6 +88,7 @@ Adaptive Engine
 
 ## Project Structure
 
+```
 Atlas/
 ├── frontend/
 │   └── src/
