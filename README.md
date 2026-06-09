@@ -1,8 +1,8 @@
-# Atlas — Adaptive Study Scheduler
+# Atlas (Adaptive Study Scheduler)
 
-Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability — then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
+Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
 
-The core idea: most scheduling tools treat your time as static. Atlas treats it as dynamic — adjusting to what actually happens and getting more accurate with each completed task.
+The core idea: most scheduling tools treat your time as static. Atlas treats it as dynamic, adjusting to what actually happens and getting more accurate with each completed task.
 
 ## Why It Exists
 
@@ -16,9 +16,14 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **Schedules around peak hours** —> places hardest tasks during your self-reported most productive window
 - **Handles flexible and fixed commitments** —> meals and commitments can have fixed times or be placed automatically in preferred windows
 - **Models commute time** —> blocks travel to and from any commitment requiring transportation, including return trips
+- **Adapts to actual behavior** —> uses logged actual wake/sleep times and meal times to adjust the schedule in real time
+- **Adjusts duration estimates** —> computes per-category multipliers from history and silently corrects future task durations
 - **Collects behavioral feedback** —> after each task, logs actual duration, actual difficulty, and completion status
 - **Tracks estimation accuracy** —> compares estimated vs. actual duration per task and by category
 - **Identifies productive time patterns** —> analyzes which time periods have the highest task completion rates
+- **Surfaces smart suggestions** —> detects overdue tasks, consistent underestimation patterns, and peak productivity windows
+- **Weekly analytics** —> summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
+- **Schedule notes** —> after generation, flags any duration adjustments, sleep time shifts, or tasks that couldn't fit
 - **Persists everything** —> all tasks, history, settings, and schedules saved to a local SQLite database
 
 ## How It Works
@@ -32,10 +37,16 @@ User inputs:
           ▼
 Priority Scoring Engine
   score = 0.35×urgency + 0.25×importance + 0.20×preference + 0.15×difficulty + 0.05×consistency
+  consistency = per-category completion rate from history (default 0.5 until 2+ data points)
+          │
+          ▼
+Duration Adjustment Engine
+  per-category multiplier = total actual / total estimated (requires 2+ history entries)
+  adjusted duration = estimated × multiplier
           │
           ▼
 Schedule Generator
-  1. Block fixed commitments and meals (+ commute time)
+  1. Block fixed commitments and meals (+ commute time); use actual times if logged
   2. Place flexible blocks in preferred windows
   3. Add shower, morning routine, wind-down buffers
   4. Interleave deep/light tasks by priority
@@ -43,7 +54,7 @@ Schedule Generator
   6. Prefer peak-hour windows for deep work
           │
           ▼
-Generated daily schedule (displayed in the UI)
+Generated daily schedule + schedule notes
           │
           ▼
 Feedback Collection (after each task)
@@ -51,11 +62,9 @@ Feedback Collection (after each task)
           │
           ▼
 History & Analytics
-  Per-category estimation accuracy, productive time analysis,
-  completion rates by time of day
+  Per-category multipliers, weekly stats, productive time analysis,
+  completion rates by time of day, smart suggestions
 ```
-
-**Adaptive loop (in progress):** History data feeds back into duration estimates and priority scoring, so the scheduler gradually corrects for individual patterns — e.g., if you consistently underestimate Coding tasks by 40%, future estimates adjust upward.
 
 ## Tech Stack
 
@@ -66,7 +75,7 @@ History & Analytics
 | Database | SQLite via Python `sqlite3` |
 | API communication | REST (JSON) |
 
-No ORM — raw SQL for transparency and simplicity. No auth yet (planned for v2 deployment).
+No ORM — raw SQL for transparency and simplicity. No auth yet (planned for Phase 3 deployment).
 
 ## Quick Demo
 
@@ -104,6 +113,18 @@ Settings:
 10:30 – 11:00 🌙 Wind down
 ```
 
+**Schedule notes (after 2 weeks of use):**
+```
+⚠ Study for CS exam: duration adjusted from 180 to 243 min (+35% based on Studying history)
+⚠ Review flashcards: duration adjusted from 30 to 25 min (-17% based on Homework history)
+```
+
+**Dashboard suggestions:**
+```
+💡 You tend to underestimate Studying tasks by 35% — try adding 35% more time when estimating.
+💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — try scheduling deep work then.
+```
+
 ## Project Structure
 
 ```
@@ -118,7 +139,7 @@ Atlas/
     └── atlas.db                # SQLite database (auto-created on first run)
 ```
 
-All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only — no business logic lives there.
+All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only, no business logic lives there.
 
 ## Setup
 
@@ -173,25 +194,45 @@ Runs at `http://localhost:3000`.
 
 ## Current Status
 
-**Completed (Phase 1 & 2 partial):**
-- Full schedule generation with all block types
-- Task feedback system with timer and manual entry
-- History tracking with category breakdowns
-- Productive time analysis by time of day
-- Flexible and fixed availability blocks
-- Full CRUD for all data types
+**Phase 1 — Complete:**
+- Task input with name, description, deadline, category, difficulty, importance, duration
+- Auto deep/light work classification with keyword matching and user override
+- Custom keywords in Settings
+- Priority scoring: `0.35×urgency + 0.25×importance + 0.20×preference + 0.15×difficulty + 0.05×consistency`
+- Daily availability: sleep schedule, fixed and flexible meals and commitments
+- Commute time (to and from) for meals and commitments
+- Shower scheduling (duration + morning/evening/both preference)
+- Schedule generation with morning routine, breaks, peak hours, deep/light alternation
+- Full persistence for all data types
+- Full CRUD for tasks, meals, commitments
+- Settings: clock format, max block length, buffers, transition gap, energy pattern, shower
 
-**In progress (Phase 2 remaining):**
-- Duration adjustment engine — uses category history to compute per-category multipliers and auto-adjust future estimates
-- Dynamic scheduling — incorporates actual sleep/meal data into schedule generation
-- Personalized priority scoring — adds completion success rate as a modifier
-- Weekly analytics dashboard
+**Phase 2 — Complete:**
+- Task feedback: completion status, actual duration (timer or manual), actual difficulty
+- Task timer with Start/Stop
+- History system with per-task and overall accuracy
+- Category breakdown stats
+- Duration adjustment engine: per-category multipliers from history, applied to schedule and task display
+- Dynamic scheduling: actual sleep and meal times used in schedule generation
+- Personalized priority scoring: consistency factor driven by real completion rate per category
+- Weekly analytics dashboard: task counts, time estimated vs actual, accuracy, category breakdown
+- Productive time analysis: completion rate, average duration, average accuracy per time period
+- Schedule adjustment summary: notes on duration adjustments, sleep shifts, unscheduled tasks
+- Smart suggestions: overdue tasks, underestimation patterns, peak productivity nudges
+- Environment-aware debug logging: logs only in development, stripped in production builds
+
+**Phase 3 — Planned:**
+- UI redesign with Tailwind CSS
+- Deploy frontend to Vercel, backend to Render
+- User accounts and authentication
+- Weekly and semester schedule views
+- Per-day availability (different meals/sleep/commitments per day)
 
 ## Future Directions
 
-- **ML-based duration prediction** — train a lightweight regression model on task history to predict durations more accurately than simple averages, incorporating task type, category, time of day, and self-reported difficulty
+- **ML-based duration prediction**: train a lightweight regression model on task history to predict durations more accurately than simple averages, incorporating task type, category, time of day, and self-reported difficulty
 - **Disruption recovery** — detect when the day goes off-plan (late wake, skipped meal) and regenerate the remaining schedule in real time
-- **Calendar API integration** — pull commitments directly from Google Calendar instead of manual entry
-- **Weekly and semester views** — plan across multiple days with deadline-aware backscheduling
-- **User accounts and cloud sync** — multi-device support with authentication (planned for Phase 3 deployment on Vercel + Render)
-- **Optimization algorithm research** — the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
+- **Calendar API integration**: pull commitments directly from Google Calendar instead of manual entry
+- **Weekly and semester views**: plan across multiple days with deadline-aware backscheduling
+- **User accounts and cloud sync**: multi-device support with authentication (planned for Phase 3 deployment on Vercel + Render)
+- **Optimization algorithm research**: the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
