@@ -74,6 +74,10 @@ Adaptive Engine
   (updates future estimates based on user behavior patterns)
 ```
 
+**Note**: The scheduling engine currently runs on the frontend. The backend handles 
+ - persistence — storing tasks, history, meals, and settings in SQLite. The adaptive 
+ - engine (Phase 2) will move scheduling logic to the backend to access historical data.
+
 ## Tech Stack
 
 | Layer    | Technology             |
@@ -85,9 +89,12 @@ Adaptive Engine
 ## Project Structure
 
 Atlas/
-├── frontend/          # React app (UI, schedule display, task input)
-├── backend/           # FastAPI server (scheduler engine, adaptive logic)
-├── docs/              # Architecture notes, design decisions
+├── frontend/
+│   └── src/
+│       └── App.js        # Full React app (scheduling UI, task input, feedback)
+├── backend/
+│   └── main.py           # FastAPI server (routes, DB, scheduling logic)
+├── docs/
 └── README.md
 ```
 
@@ -100,7 +107,7 @@ Atlas/
 ### Backend
 ```bash
 cd backend
-pip install -r requirements.txt
+pip install fastapi uvicorn pydantic
 uvicorn main:app --reload
 ```
 
