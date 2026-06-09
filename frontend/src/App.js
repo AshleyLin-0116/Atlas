@@ -469,12 +469,18 @@ function App() {
     const sleep = toMinutes(sleepTime);
     const totalTime = sleep - wake;
     const mealTime = meals.reduce((total, meal) => {
+      if (meal.timeMode === 'flexible') {
+        return total + (meal.flexDuration || 0);
+      }
       if (!meal.mealStart || !meal.mealEnd) {
         return total;
       }
       return total + (toMinutes(meal.mealEnd) - toMinutes(meal.mealStart));
     }, 0);
     const commitmentTime = commitments.reduce((total, commitment) => {
+      if (commitment.timeMode === 'flexible') {
+        return total + (commitment.flexDuration || 0);
+      }
       if (!commitment.commitmentStart || !commitment.commitmentEnd) {
         return total;
       }
