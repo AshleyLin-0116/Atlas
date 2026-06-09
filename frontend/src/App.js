@@ -75,6 +75,7 @@ function FlexPreferenceSelect({ value, onChange }) {
 }
 
 function App() {
+  const DEBUG = process.env.NODE_ENV === 'development';
   const [difficulty, setDifficulty] = useState(5);
   const [importance, setImportance] = useState(5);
   const [editingDifficulty, setEditingDifficulty] = useState(false);
@@ -943,21 +944,21 @@ function App() {
   }
 
   function handleSubmitFeedback(taskId) {
-    console.log('handleSubmitFeedback called with taskId:', taskId);
-    console.log('completionStatus:', completionStatus);
-    console.log('actualDuration:', actualDuration);
-    console.log('actualDifficulty:', actualDifficulty);
+    DEBUG && console.log('handleSubmitFeedback called with taskId:', taskId);
+    DEBUG && console.log('completionStatus:', completionStatus);
+    DEBUG && console.log('actualDuration:', actualDuration);
+    DEBUG && console.log('actualDifficulty:', actualDifficulty);
 
     if (!completionStatus) {
-      console.log('BLOCKED: missing completionStatus');
+      DEBUG && console.log('BLOCKED: missing completionStatus');
       return;
     }
     if (!actualDuration) {
-      console.log('BLOCKED: missing actualDuration');
+      DEBUG && console.log('BLOCKED: missing actualDuration');
       return;
     }
 
-    console.log('Sending fetch request...');
+    DEBUG && console.log('Sending fetch request...');
     fetch(`http://localhost:8000/tasks/${taskId}/feedback`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -970,11 +971,11 @@ function App() {
       })
     })
       .then((res) => {
-        console.log('Response status:', res.status);
+        DEBUG && console.log('Response status:', res.status);
         return res.json();
       })
       .then((data) => {
-        console.log('Response data:', data);
+        DEBUG && console.log('Response data:', data);
         setTasks(tasks.map((task) => {
           if (task.id === taskId) {
             return {
@@ -1235,7 +1236,7 @@ function App() {
       body: JSON.stringify({ key, value: String(value) })
     })
       .then((res) => res.json())
-      .then((data) => console.log('Setting saved:', data))
+      .then((data) => { DEBUG && console.log('Setting saved:', data); })
       .catch((err) => console.error('Failed to save setting:', err));
   }
 
@@ -1254,7 +1255,7 @@ function App() {
   }
 
   function handleUpdateTask(taskId) {
-    console.log('Updating task:', taskId);
+    DEBUG && console.log('Updating task:', taskId);
     const updatedTask = {
       taskName: editTaskName,
       deadline: editDeadline,
@@ -1375,7 +1376,7 @@ function App() {
   }
 
   function handleLogActualSleep() {
-    console.log('Logging actual sleep:', { actualWakeTime, actualSleepTime });
+    DEBUG && console.log('Logging actual sleep:', { actualWakeTime, actualSleepTime });
     fetch('http://localhost:8000/sleep/actual', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
