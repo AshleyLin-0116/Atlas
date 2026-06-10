@@ -139,7 +139,8 @@ def init_db():
             commuteTime INTEGER DEFAULT 0,
             timeMode TEXT DEFAULT 'fixed',
             flexDuration INTEGER DEFAULT 0,
-            flexPreference TEXT DEFAULT 'any'
+            flexPreference TEXT DEFAULT 'any',
+            days TEXT DEFAULT ''
         )
     """)
     try:
@@ -178,6 +179,11 @@ def init_db():
         pass
     try:
         conn.execute("ALTER TABLE sleep_schedule ADD COLUMN actual_sleep TEXT")
+        conn.commit()
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE commitments ADD COLUMN days TEXT DEFAULT ''")
         conn.commit()
     except:
         pass
@@ -236,6 +242,7 @@ class Commitment(BaseModel):
     timeMode: Optional[str] = 'fixed'
     flexDuration: Optional[int] = 0
     flexPreference: Optional[str] = 'any'
+    days: Optional[str] = ''
 
 class SleepSchedule(BaseModel):
     wakeTime: str
@@ -409,11 +416,12 @@ def add_commitment(commitment: Commitment):
     cursor = conn.execute(
         """INSERT INTO commitments 
         (commitmentName, commitmentStart, commitmentEnd, commitmentType, 
-        commuteTime, timeMode, flexDuration, flexPreference) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        commuteTime, timeMode, flexDuration, flexPreference, days) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
         commitment.commitmentType, commitment.commuteTime,
-        commitment.timeMode, commitment.flexDuration, commitment.flexPreference)
+        commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
+        commitment.days)
     )
     conn.commit()
     result = conn.execute("SELECT * FROM commitments WHERE id = ?", (cursor.lastrowid,)).fetchone()
@@ -426,12 +434,12 @@ def update_commitment(commitment_id: int, commitment: Commitment):
     conn.execute(
         """UPDATE commitments SET commitmentName = ?, commitmentStart = ?,
         commitmentEnd = ?, commitmentType = ?, commuteTime = ?,
-        timeMode = ?, flexDuration = ?, flexPreference = ?
+        timeMode = ?, flexDuration = ?, flexPreference = ?, days = ?
         WHERE id = ?""",
         (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
         commitment.commitmentType, commitment.commuteTime,
         commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
-        commitment_id)
+        commitment.days, commitment_id)
     )
     conn.commit()
     result = conn.execute("SELECT * FROM commitments WHERE id = ?", (commitment_id,)).fetchone()

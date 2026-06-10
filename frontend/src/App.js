@@ -176,6 +176,8 @@ function App() {
   const [showerPreference, setShowerPreference] = useState('morning');
   const [savedShowerPreference, setSavedShowerPreference] = useState('morning');
   const [scheduleSummary, setScheduleSummary] = useState([]);
+  const [commitmentDays, setCommitmentDays] = useState([]);
+  const [editCommitmentDays, setEditCommitmentDays] = useState([]);
 
   useEffect(() => {
     fetch('http://localhost:8000/tasks')
@@ -370,7 +372,8 @@ function App() {
       commuteTime,
       timeMode: commitmentTimeMode,
       flexDuration: commitmentFlexDuration,
-      flexPreference: commitmentFlexPreference
+      flexPreference: commitmentFlexPreference,
+      days: commitmentDays.join(',')
     };
     fetch('http://localhost:8000/commitments', {
       method: 'POST',
@@ -388,6 +391,7 @@ function App() {
         setCommitmentTimeMode('fixed');
         setCommitmentFlexDuration(60);
         setCommitmentFlexPreference('any');
+        setCommitmentDays([]);
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -422,6 +426,14 @@ function App() {
       setCustomLightKeywords([...customLightKeywords, keyword]);
     }
     setNewKeyword('');
+  }
+
+  function toggleDay(day, days, setDays) {
+    if (days.includes(day)) {
+      setDays(days.filter((d) => d !== day));
+    } else {
+      setDays([...days, day]);
+    }
   }
 
   function handleDeleteKeyword(keyword, type) {
@@ -547,6 +559,8 @@ function App() {
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
 
+    const todayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
+
     const effectiveWake = actualWakeTime || wakeTime;
     const effectiveSleep = actualSleepTime || sleepTime;
 
@@ -588,6 +602,12 @@ function App() {
       ...commitments.flatMap((commitment) => {
         if (commitment.timeMode === 'flexible' || !commitment.commitmentStart || !commitment.commitmentEnd) {
           return [];
+        }
+        if (commitment.days && commitment.days.length > 0) {
+          const commitmentDayList = commitment.days.split(',').filter(Boolean);
+          if (!commitmentDayList.includes(todayName)) {
+            return [];
+          }
         }
         const blocks = [{
           start: toMinutes(commitment.commitmentStart),
@@ -789,6 +809,12 @@ function App() {
 
     for (const commitment of commitments) {
       if (commitment.timeMode === 'flexible' && commitment.flexDuration > 0) {
+        if (commitment.days && commitment.days.length > 0) {
+          const commitmentDayList = commitment.days.split(',').filter(Boolean);
+          if (!commitmentDayList.includes(todayName)) {
+            continue;
+          }
+        }
         placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTime || 0);
       }
     }
@@ -1330,6 +1356,7 @@ function App() {
     setEditCommitmentTimeMode(commitment.timeMode || 'fixed');
     setEditCommitmentFlexDuration(commitment.flexDuration || 60);
     setEditCommitmentFlexPreference(commitment.flexPreference || 'any');
+    setEditCommitmentDays(commitment.days ? commitment.days.split(',').filter(Boolean) : []);
   }
 
   function handleUpdateCommitment(commitmentId) {
@@ -1341,7 +1368,8 @@ function App() {
       commuteTime: editCommitmentCommuteTime,
       timeMode: editCommitmentTimeMode,
       flexDuration: editCommitmentFlexDuration,
-      flexPreference: editCommitmentFlexPreference
+      flexPreference: editCommitmentFlexPreference,
+      days: editCommitmentDays.join(',')
     };
     fetch(`http://localhost:8000/commitments/${commitmentId}`, {
       method: 'PUT',
@@ -2271,6 +2299,19 @@ function App() {
               </div>
             )}
             <div>
+            <div>
+              <label>Days (leave empty for every day): </label>
+              {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                <label key={day}>
+                  <input
+                    type="checkbox"
+                    checked={commitmentDays.includes(day)}
+                    onChange={() => toggleDay(day, commitmentDays, setCommitmentDays)}
+                  />
+                  {day.charAt(0).toUpperCase() + day.slice(1)}
+                </label>
+              ))}
+            </div>
               <select
                 value={commitmentType}
                 onChange={(e) => setCommitmentType(e.target.value)}
@@ -2353,6 +2394,19 @@ function App() {
                       </div>
                     )}
                     <div>
+                    <div>
+                      <label>Days (leave empty for every day): </label>
+                      {['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'].map((day) => (
+                        <label key={day}>
+                          <input
+                            type="checkbox"
+                            checked={editCommitmentDays.includes(day)}
+                            onChange={() => toggleDay(day, editCommitmentDays, setEditCommitmentDays)}
+                          />
+                          {day.charAt(0).toUpperCase() + day.slice(1)}
+                        </label>
+                      ))}
+                    </div>
                       <label>Type: </label>
                       <select
                         value={editCommitmentType}
@@ -2386,6 +2440,9 @@ function App() {
                   <div>
                     <strong>{commitment.commitmentName}</strong>
                     <p>Type: {commitment.commitmentType}</p>
+                    {commitment.days && commitment.days.length > 0 && (
+                      <p>Days: {commitment.days.split(',').filter(Boolean).map((d) => d.charAt(0).toUpperCase() + d.slice(1)).join(', ')}</p>
+                    )}
                     {commitment.timeMode === 'flexible' ? (
                       <p>Flexible — {commitment.flexDuration} minutes — {commitment.flexPreference === 'any' ? 'any time' : commitment.flexPreference.replace('_', ' ')}</p>
                     ) : (
