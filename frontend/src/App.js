@@ -76,6 +76,7 @@ function FlexPreferenceSelect({ value, onChange }) {
 
 function App() {
   const DEBUG = process.env.NODE_ENV === 'development';
+  const clamp = (value, min, max) => Math.min(Math.max(Number(value), min), max);
   const [difficulty, setDifficulty] = useState(5);
   const [importance, setImportance] = useState(5);
   const [editingDifficulty, setEditingDifficulty] = useState(false);
@@ -280,9 +281,31 @@ function App() {
 
   function handleAddTask(e) {
     e.preventDefault();
+    if (!taskName.trim()) {
+      alert('Task name is required.');
+      return;
+    }
+    if (!deadline) {
+      alert('Deadline is required.');
+      return;
+    }
+    if (!category) {
+      alert('Please select a category.');
+      return;
+    }
+    if (!duration || Number(duration) <= 0) {
+      alert('Duration must be a positive number.');
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (new Date(deadline) < today && !workOnDueDate) {
+      alert('Deadline cannot be in the past.');
+      return;
+    }
     const finalTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
     const newTask = {
-      taskName,
+      taskName: taskName.trim(),
       deadline,
       difficulty: Number(difficulty),
       importance: Number(importance),
@@ -328,8 +351,30 @@ function App() {
 
   function handleAddMeal(e) {
     e.preventDefault();
+    if (!mealName.trim()) {
+      alert('Meal name is required.');
+      return;
+    }
+    if (mealTimeMode === 'fixed') {
+      if (!mealStart || !mealEnd) {
+        alert('Please set both a start and end time for this meal.');
+        return;
+      }
+      const toMinutes = (time) => {
+        const [h, m] = time.split(':').map(Number);
+        return h * 60 + m;
+      };
+      if (toMinutes(mealEnd) <= toMinutes(mealStart)) {
+        alert('Meal end time must be after start time.');
+        return;
+      }
+    }
+    if (mealTimeMode === 'flexible' && (!mealFlexDuration || Number(mealFlexDuration) <= 0)) {
+      alert('Please enter a valid duration for this meal.');
+      return;
+    }
     const newMeal = {
-      mealName,
+      mealName: mealName.trim(),
       mealStart: mealTimeMode === 'fixed' ? mealStart : null,
       mealEnd: mealTimeMode === 'fixed' ? mealEnd : null,
       commuteTime: mealCommuteTime,
@@ -364,8 +409,34 @@ function App() {
 
   function handleAddCommitment(e) {
     e.preventDefault();
+    if (!commitmentName.trim()) {
+      alert('Commitment name is required.');
+      return;
+    }
+    if (!commitmentType) {
+      alert('Please select a commitment type.');
+      return;
+    }
+    if (commitmentTimeMode === 'fixed') {
+      if (!commitmentStart || !commitmentEnd) {
+        alert('Please set both a start and end time for this commitment.');
+        return;
+      }
+      const toMinutes = (time) => {
+        const [h, m] = time.split(':').map(Number);
+        return h * 60 + m;
+      };
+      if (toMinutes(commitmentEnd) <= toMinutes(commitmentStart)) {
+        alert('Commitment end time must be after start time.');
+        return;
+      }
+    }
+    if (commitmentTimeMode === 'flexible' && (!commitmentFlexDuration || Number(commitmentFlexDuration) <= 0)) {
+      alert('Please enter a valid duration for this commitment.');
+      return;
+    }
     const newCommitment = {
-      commitmentName,
+      commitmentName: commitmentName.trim(),
       commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null,
       commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null,
       commitmentType,
@@ -404,6 +475,20 @@ function App() {
 
   function handleSaveSleepSchedule() {
     if (!wakeTime || !sleepTime) {
+      alert('Please set both a wake time and a sleep time.');
+      return;
+    }
+    const toMinutes = (time) => {
+      const [h, m] = time.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const wakeMin = toMinutes(wakeTime);
+    const sleepMin = toMinutes(sleepTime);
+    const availableMinutes = sleepMin > wakeMin
+      ? sleepMin - wakeMin
+      : (sleepMin + 1440) - wakeMin;
+    if (availableMinutes < 60) {
+      alert('Your wake and sleep times are less than 1 hour apart. Please check your schedule.');
       return;
     }
     fetch('http://localhost:8000/sleep', {
@@ -421,8 +506,16 @@ function App() {
     }
     const keyword = newKeyword.toLowerCase().trim();
     if (newKeywordType === 'deep') {
+      if (customDeepKeywords.includes(keyword)) {
+        alert(`"${keyword}" is already in your deep work keywords.`);
+        return;
+      }
       setCustomDeepKeywords([...customDeepKeywords, keyword]);
     } else {
+      if (customLightKeywords.includes(keyword)) {
+        alert(`"${keyword}" is already in your light work keywords.`);
+        return;
+      }
       setCustomLightKeywords([...customLightKeywords, keyword]);
     }
     setNewKeyword('');
@@ -837,12 +930,21 @@ function App() {
     const categoryMultipliers = getCategoryMultipliers();
 
     for (const task of orderedTasks) {
+      if (!task.duration || Number(task.duration) <= 0) {
+        continue;
+      }
       const multiplier = task.category && categoryMultipliers[task.category]
         ? categoryMultipliers[task.category]
         : 1;
       let remaining = Math.round(Number(task.duration) * multiplier);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
       let currentTime = getNextFreeStart(wake);
+
+      const isOccupiedAt = (start, end) => {
+        return schedule.some(
+          (b) => start < toMinutes(b.end) && end > toMinutes(b.start)
+        );
+      };
 
       let safetyCounter = 0;
       while (remaining > 0 && currentTime < sleep) {
@@ -857,7 +959,7 @@ function App() {
         }
 
         let blockEnd = currentTime + Math.min(remaining, limit);
-        while (blockEnd > currentTime && isOccupied(currentTime, blockEnd)) {
+        while (blockEnd > currentTime && isOccupiedAt(currentTime, blockEnd)) {
           blockEnd--;
         }
         const blockSize = blockEnd - currentTime;
@@ -880,7 +982,7 @@ function App() {
         if (remaining > 0) {
           const breakLength = Math.max(15, Math.round(blockSize * 0.15));
           const breakEnd = currentTime + breakLength;
-          if (!isOccupied(currentTime, breakEnd) && breakEnd <= sleep) {
+          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd <= sleep) {
             schedule.push({
               start: toTimeString(currentTime),
               end: toTimeString(breakEnd),
@@ -971,20 +1073,14 @@ function App() {
 
   function handleSubmitFeedback(taskId) {
     DEBUG && console.log('handleSubmitFeedback called with taskId:', taskId);
-    DEBUG && console.log('completionStatus:', completionStatus);
-    DEBUG && console.log('actualDuration:', actualDuration);
-    DEBUG && console.log('actualDifficulty:', actualDifficulty);
-
     if (!completionStatus) {
-      DEBUG && console.log('BLOCKED: missing completionStatus');
+      alert('Please select a completion status.');
       return;
     }
-    if (!actualDuration) {
-      DEBUG && console.log('BLOCKED: missing actualDuration');
+    if (!actualDuration || Number(actualDuration) <= 0) {
+      alert('Please enter how long the task took (in minutes).');
       return;
     }
-
-    DEBUG && console.log('Sending fetch request...');
     fetch(`http://localhost:8000/tasks/${taskId}/feedback`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -1281,9 +1377,25 @@ function App() {
   }
 
   function handleUpdateTask(taskId) {
+    if (!editTaskName.trim()) {
+      alert('Task name is required.');
+      return;
+    }
+    if (!editDeadline) {
+      alert('Deadline is required.');
+      return;
+    }
+    if (!editCategory) {
+      alert('Please select a category.');
+      return;
+    }
+    if (!editDuration || Number(editDuration) <= 0) {
+      alert('Duration must be a positive number.');
+      return;
+    }
     DEBUG && console.log('Updating task:', taskId);
     const updatedTask = {
-      taskName: editTaskName,
+      taskName: editTaskName.trim(),
       deadline: editDeadline,
       difficulty: Number(editDifficulty),
       importance: Number(editImportance),
@@ -2669,7 +2781,7 @@ function App() {
               min="30"
               max="180"
               value={maxBlockLength}
-              onChange={(e) => setMaxBlockLength(Number(e.target.value))}
+              onChange={(e) => setMaxBlockLength(clamp(e.target.value, 30, 180))}
             />
             <button type="button" onClick={() => { setSavedMaxBlockLength(maxBlockLength); saveSetting('maxBlockLength', maxBlockLength); }}>Confirm</button>
           </div>
@@ -2680,7 +2792,7 @@ function App() {
               min="0"
               max="120"
               value={morningBuffer}
-              onChange={(e) => setMorningBuffer(Number(e.target.value))}
+              onChange={(e) => setMorningBuffer(clamp(e.target.value, 0, 120))}
             />
             <button type="button" onClick={() => { setSavedMorningBuffer(morningBuffer); saveSetting('morningBuffer', morningBuffer); }}>Confirm</button>
           </div>
@@ -2691,7 +2803,7 @@ function App() {
               min="0"
               max="120"
               value={nightBuffer}
-              onChange={(e) => setNightBuffer(Number(e.target.value))}
+              onChange={(e) => setNightBuffer(clamp(e.target.value, 0, 120))}
             />
             <button type="button" onClick={() => { setSavedNightBuffer(nightBuffer); saveSetting('nightBuffer', nightBuffer); }}>Confirm</button>
           </div>
@@ -2702,7 +2814,7 @@ function App() {
               min="5"
               max="30"
               value={transitionGap}
-              onChange={(e) => setTransitionGap(Number(e.target.value))}
+              onChange={(e) => setTransitionGap(clamp(e.target.value, 5, 30))}
             />
             <button type="button" onClick={() => { setSavedTransitionGap(transitionGap); saveSetting('transitionGap', transitionGap); }}>Confirm</button>
           </div>
@@ -2713,7 +2825,7 @@ function App() {
               min="5"
               max="60"
               value={showerDuration}
-              onChange={(e) => setShowerDuration(Number(e.target.value))}
+              onChange={(e) => setShowerDuration(clamp(e.target.value, 5, 60))}
             />
             <button type="button" onClick={() => { setSavedShowerDuration(showerDuration); saveSetting('showerDuration', showerDuration); }}>Confirm</button>
           </div>
