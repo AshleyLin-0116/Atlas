@@ -181,27 +181,27 @@ function App() {
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
 
   useEffect(() => {
-    fetch('${process.env.REACT_APP_API_URL}/tasks')
+    fetch(`${process.env.REACT_APP_API_URL}/tasks`)
       .then((res) => res.json())
       .then((data) => setTasks(data))
       .catch((err) => console.error('Failed to load tasks:', err));
 
-    fetch('${process.env.REACT_APP_API_URL}/history')
+    fetch(`${process.env.REACT_APP_API_URL}/history`)
       .then((res) => res.json())
       .then((data) => setHistory(data))
       .catch((err) => console.error('Failed to load history:', err));
 
-    fetch('${process.env.REACT_APP_API_URL}/meals')
+    fetch(`${process.env.REACT_APP_API_URL}/meals`)
       .then((res) => res.json())
       .then((data) => setMeals(data))
       .catch((err) => console.error('Failed to load meals:', err));
 
-    fetch('${process.env.REACT_APP_API_URL}/commitments')
+    fetch(`${process.env.REACT_APP_API_URL}/commitments`)
       .then((res) => res.json())
       .then((data) => setCommitments(data))
       .catch((err) => console.error('Failed to load commitments:', err));
 
-    fetch('${process.env.REACT_APP_API_URL}/sleep')
+    fetch(`${process.env.REACT_APP_API_URL}/sleep`)
       .then((res) => res.json())
       .then((data) => {
         if (data) {
@@ -218,7 +218,7 @@ function App() {
       })
       .catch((err) => console.error('Failed to load sleep schedule:', err));
 
-    fetch('${process.env.REACT_APP_API_URL}/settings')
+    fetch(`${process.env.REACT_APP_API_URL}/settings`)
       .then((res) => res.json())
       .then((data) => {
         if (data.clockFormat) { 
@@ -316,7 +316,7 @@ function App() {
       workOnDueDate,
       description
     };
-    fetch('${process.env.REACT_APP_API_URL}/tasks', {
+    fetch(`${process.env.REACT_APP_API_URL}/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newTask)
@@ -382,7 +382,7 @@ function App() {
       flexDuration: mealFlexDuration,
       flexPreference: mealFlexPreference
     };
-    fetch('${process.env.REACT_APP_API_URL}/meals', {
+    fetch(`${process.env.REACT_APP_API_URL}/meals`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newMeal)
@@ -446,7 +446,7 @@ function App() {
       flexPreference: commitmentFlexPreference,
       days: commitmentDays.join(',')
     };
-    fetch('${process.env.REACT_APP_API_URL}/commitments', {
+    fetch(`${process.env.REACT_APP_API_URL}/commitments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newCommitment)
@@ -491,7 +491,7 @@ function App() {
       alert('Your wake and sleep times are less than 1 hour apart. Please check your schedule.');
       return;
     }
-    fetch('${process.env.REACT_APP_API_URL}/sleep', {
+    fetch(`${process.env.REACT_APP_API_URL}/sleep`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wakeTime, sleepTime })
@@ -1109,7 +1109,7 @@ function App() {
         setActualDifficulty(5);
         setCompletionStatus('');
         setManualStartTime('');
-        fetch('${process.env.REACT_APP_API_URL}/history')
+        fetch(`${process.env.REACT_APP_API_URL}/history`)
           .then((res) => res.json())
           .then((data) => setHistory(data))
           .catch((err) => console.error('Failed to reload history:', err));
@@ -1386,7 +1386,7 @@ function App() {
   }
 
   function saveSetting(key, value) {
-    fetch('${process.env.REACT_APP_API_URL}/settings', {
+    fetch(`${process.env.REACT_APP_API_URL}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value: String(value) })
@@ -1561,7 +1561,7 @@ function App() {
     if (actualSleepTime) {
       payload.actual_sleep = actualSleepTime;
     }
-    fetch('${process.env.REACT_APP_API_URL}/sleep/actual', {
+    fetch(`${process.env.REACT_APP_API_URL}/sleep/actual`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
