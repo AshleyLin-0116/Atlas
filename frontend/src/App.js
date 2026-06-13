@@ -77,6 +77,16 @@ function FlexPreferenceSelect({ value, onChange }) {
 function App() {
   const DEBUG = process.env.NODE_ENV === 'development';
   const clamp = (value, min, max) => Math.min(Math.max(Number(value), min), max);
+  const authFetch = (url, options = {}) => {
+    return fetch(url, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {})
+      }
+    });
+  };
   const [difficulty, setDifficulty] = useState(5);
   const [importance, setImportance] = useState(5);
   const [editingDifficulty, setEditingDifficulty] = useState(false);
@@ -179,29 +189,36 @@ function App() {
   const [scheduleSummary, setScheduleSummary] = useState([]);
   const [commitmentDays, setCommitmentDays] = useState([]);
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
+  const [token, setToken] = useState(localStorage.getItem('atlas_token') || null);
+  const [username, setUsername] = useState(localStorage.getItem('atlas_username') || '');
+  const [authMode, setAuthMode] = useState('login');
+  const [authUsername, setAuthUsername] = useState('');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authError, setAuthError] = useState('');
 
   useEffect(() => {
-    fetch(`${process.env.REACT_APP_API_URL}/tasks`)
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks`)
       .then((res) => res.json())
       .then((data) => setTasks(data))
       .catch((err) => console.error('Failed to load tasks:', err));
 
-    fetch(`${process.env.REACT_APP_API_URL}/history`)
+    authFetch(`${process.env.REACT_APP_API_URL}/history`)
       .then((res) => res.json())
       .then((data) => setHistory(data))
       .catch((err) => console.error('Failed to load history:', err));
 
-    fetch(`${process.env.REACT_APP_API_URL}/meals`)
+    authFetch(`${process.env.REACT_APP_API_URL}/meals`)
       .then((res) => res.json())
       .then((data) => setMeals(data))
       .catch((err) => console.error('Failed to load meals:', err));
 
-    fetch(`${process.env.REACT_APP_API_URL}/commitments`)
+    authFetch(`${process.env.REACT_APP_API_URL}/commitments`)
       .then((res) => res.json())
       .then((data) => setCommitments(data))
       .catch((err) => console.error('Failed to load commitments:', err));
 
-    fetch(`${process.env.REACT_APP_API_URL}/sleep`)
+    authFetch(`${process.env.REACT_APP_API_URL}/sleep`)
       .then((res) => res.json())
       .then((data) => {
         if (data) {
@@ -218,7 +235,7 @@ function App() {
       })
       .catch((err) => console.error('Failed to load sleep schedule:', err));
 
-    fetch(`${process.env.REACT_APP_API_URL}/settings`)
+    authFetch(`${process.env.REACT_APP_API_URL}/settings`)
       .then((res) => res.json())
       .then((data) => {
         if (data.clockFormat) { 
@@ -279,6 +296,80 @@ function App() {
     return 'light';
   }
 
+  function handleRegister() {
+    if (!authUsername.trim() || !authEmail.trim() || !authPassword.trim()) {
+      setAuthError('All fields are required.');
+      return;
+    }
+    fetch(`${process.env.REACT_APP_API_URL}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: authUsername.trim(),
+        email: authEmail.trim(),
+        password: authPassword
+      })
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => { throw new Error(d.detail); });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        localStorage.setItem('atlas_token', data.access_token);
+        localStorage.setItem('atlas_username', data.username);
+        setToken(data.access_token);
+        setUsername(data.username);
+        setAuthError('');
+      })
+      .catch((err) => setAuthError(err.message));
+  }
+
+  function handleLogin() {
+    if (!authUsername.trim() || !authPassword.trim()) {
+      setAuthError('Username and password are required.');
+      return;
+    }
+    const formData = new URLSearchParams();
+    formData.append('username', authUsername.trim());
+    formData.append('password', authPassword);
+    fetch(`${process.env.REACT_APP_API_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: formData
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => { throw new Error(d.detail); });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        localStorage.setItem('atlas_token', data.access_token);
+        localStorage.setItem('atlas_username', data.username);
+        setToken(data.access_token);
+        setUsername(data.username);
+        setAuthError('');
+      })
+      .catch((err) => setAuthError(err.message));
+  }
+
+  function handleLogout() {
+    localStorage.removeItem('atlas_token');
+    localStorage.removeItem('atlas_username');
+    setToken(null);
+    setUsername('');
+    setTasks([]);
+    setMeals([]);
+    setCommitments([]);
+    setHistory([]);
+    setWakeTime('');
+    setSleepTime('');
+    setSleepScheduleSaved(false);
+    setGeneratedSchedule([]);
+  }
+
   function handleAddTask(e) {
     e.preventDefault();
     if (!taskName.trim()) {
@@ -316,7 +407,7 @@ function App() {
       workOnDueDate,
       description
     };
-    fetch(`${process.env.REACT_APP_API_URL}/tasks`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newTask)
@@ -340,7 +431,7 @@ function App() {
   }
 
   function handleDeleteTask(id) {
-    fetch(`${process.env.REACT_APP_API_URL}/tasks/${id}`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${id}`, {
       method: 'DELETE'
     })
       .then(() => {
@@ -382,7 +473,7 @@ function App() {
       flexDuration: mealFlexDuration,
       flexPreference: mealFlexPreference
     };
-    fetch(`${process.env.REACT_APP_API_URL}/meals`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/meals`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newMeal)
@@ -402,7 +493,7 @@ function App() {
   }
 
   function handleDeleteMeal(id) {
-    fetch(`${process.env.REACT_APP_API_URL}/meals/${id}`, { method: 'DELETE' })
+    authFetch(`${process.env.REACT_APP_API_URL}/meals/${id}`, { method: 'DELETE' })
       .then(() => setMeals(meals.filter((meal) => meal.id !== id)))
       .catch((err) => console.error('Failed to delete meal:', err));
   }
@@ -446,7 +537,7 @@ function App() {
       flexPreference: commitmentFlexPreference,
       days: commitmentDays.join(',')
     };
-    fetch(`${process.env.REACT_APP_API_URL}/commitments`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/commitments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newCommitment)
@@ -468,7 +559,7 @@ function App() {
   }
 
   function handleDeleteCommitment(id) {
-    fetch(`${process.env.REACT_APP_API_URL}/commitments/${id}`, { method: 'DELETE' })
+    authFetch(`${process.env.REACT_APP_API_URL}/commitments/${id}`, { method: 'DELETE' })
       .then(() => setCommitments(commitments.filter((c) => c.id !== id)))
       .catch((err) => console.error('Failed to delete commitment:', err));
   }
@@ -491,7 +582,7 @@ function App() {
       alert('Your wake and sleep times are less than 1 hour apart. Please check your schedule.');
       return;
     }
-    fetch(`${process.env.REACT_APP_API_URL}/sleep`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/sleep`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wakeTime, sleepTime })
@@ -1076,7 +1167,7 @@ function App() {
       alert('Please enter how long the task took (in minutes).');
       return;
     }
-    fetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/feedback`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/feedback`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1109,7 +1200,7 @@ function App() {
         setActualDifficulty(5);
         setCompletionStatus('');
         setManualStartTime('');
-        fetch(`${process.env.REACT_APP_API_URL}/history`)
+        authFetch(`${process.env.REACT_APP_API_URL}/history`)
           .then((res) => res.json())
           .then((data) => setHistory(data))
           .catch((err) => console.error('Failed to reload history:', err));
@@ -1386,7 +1477,7 @@ function App() {
   }
 
   function saveSetting(key, value) {
-    fetch(`${process.env.REACT_APP_API_URL}/settings`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/settings`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value: String(value) })
@@ -1440,7 +1531,7 @@ function App() {
       workOnDueDate: editWorkOnDueDate,
       description: editDescription
     };
-    fetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedTask)
@@ -1479,7 +1570,7 @@ function App() {
       flexDuration: editMealFlexDuration,
       flexPreference: editMealFlexPreference
     };
-    fetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedMeal)
@@ -1517,7 +1608,7 @@ function App() {
       flexPreference: editCommitmentFlexPreference,
       days: editCommitmentDays.join(',')
     };
-    fetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedCommitment)
@@ -1531,7 +1622,7 @@ function App() {
   }
 
   function handleLogActualMeal(mealId) {
-    fetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}/actual`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}/actual`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1561,7 +1652,7 @@ function App() {
     if (actualSleepTime) {
       payload.actual_sleep = actualSleepTime;
     }
-    fetch(`${process.env.REACT_APP_API_URL}/sleep/actual`, {
+    authFetch(`${process.env.REACT_APP_API_URL}/sleep/actual`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1575,11 +1666,60 @@ function App() {
       .catch((err) => console.error('Failed to log actual sleep:', err));
   }
 
+  if (!token) {
+    return (
+      <div>
+        <h1>Atlas</h1>
+        <h2>{authMode === 'login' ? 'Log In' : 'Create Account'}</h2>
+        {authError && <p style={{ color: 'red' }}>{authError}</p>}
+        {authMode === 'register' && (
+          <div>
+            <label>Email: </label>
+            <input
+              type="email"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+            />
+          </div>
+        )}
+        <div>
+          <label>Username: </label>
+          <input
+            type="text"
+            value={authUsername}
+            onChange={(e) => setAuthUsername(e.target.value)}
+          />
+        </div>
+        <div>
+          <label>Password: </label>
+          <input
+            type="password"
+            value={authPassword}
+            onChange={(e) => setAuthPassword(e.target.value)}
+          />
+        </div>
+        {authMode === 'login' ? (
+          <div>
+            <button type="button" onClick={handleLogin}>Log In</button>
+            <p>Don't have an account? <button type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}>Create one</button></p>
+          </div>
+        ) : (
+          <div>
+            <button type="button" onClick={handleRegister}>Create Account</button>
+            <p>Already have an account? <button type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button></p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <nav>
         <img src={logo} alt="Atlas logo" />
         <h1>Atlas</h1>
+        <span>Welcome, {username}</span>
+        <button type="button" onClick={handleLogout}>Log Out</button>
         <ul>
           <li>Dashboard</li>
           <li>Schedule</li>
