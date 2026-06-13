@@ -77,6 +77,86 @@ History & Analytics
 
 No ORM — raw SQL for transparency and simplicity. No auth yet (planned for Phase 3 deployment).
 
+## Architecture
+┌─────────────────────────────────────────┐
+
+│                  User                   │
+
+│         (Browser / Mobile Web)          │
+
+└─────────────────┬───────────────────────┘
+
+│
+
+▼
+
+┌─────────────────────────────────────────┐
+
+│              Frontend                   │
+
+│         React (Vercel)                  │
+
+│                                         │
+
+│  • Schedule Generator (generateSchedule)│
+
+│  • Priority Scoring Engine              │
+
+│  • Duration Adjustment Engine           │
+
+│  • Analytics Dashboard                  │
+
+└─────────────────┬───────────────────────┘
+
+│ REST API (JSON)
+
+▼
+
+┌─────────────────────────────────────────┐
+
+│               Backend                   │
+
+│           FastAPI (Render)              │
+
+│                                         │
+
+│  • /tasks        • /meals               │
+
+│  • /history      • /commitments         │
+
+│  • /sleep        • /settings            │
+
+└─────────────────┬───────────────────────┘
+
+│ sqlite3
+
+▼
+
+┌─────────────────────────────────────────┐
+
+│              Database                   │
+
+│         SQLite (atlas.db)               │
+
+│                                         │
+
+│  • tasks         • task_history         │
+
+│  • meals         • commitments          │
+
+│  • sleep_schedule• settings             │
+
+└─────────────────────────────────────────┘
+
+### Component Responsibilities
+
+- **Frontend (React)**: All business logic lives here. The schedule generator, priority scoring formula, and duration adjustment engine are pure JavaScript functions that run in the browser. The backend is never called for computation, only for persistence.
+- **Backend (FastAPI)**: Stateless REST API. Receives data, writes to SQLite, returns results. No scheduling logic, no business rules.
+- **Schedule Generator**: Runs entirely in the browser. Takes tasks, meals, commitments, and sleep schedule as inputs and produces an ordered list of time blocks using a greedy first-fit algorithm with peak-hour awareness and deep/light work alternation.
+- **Priority Scoring Engine**: Ranks tasks by a weighted formula: `0.35×urgency + 0.25×importance + 0.20×preference + 0.15×difficulty + 0.05×consistency`. Consistency is derived from per-category completion history.
+- **Duration Adjustment Engine**: Computes per-task and per-category multipliers from history (`total actual / total estimated`) and silently adjusts scheduled durations. Requires 2+ history entries to activate.
+- **Database (SQLite)**: Six tables storing all user data. Auto-created on first backend run. Note: SQLite on Render uses an ephemeral filesystem — a production deployment would use PostgreSQL.
+
 ## Quick Demo
 
 **Input:**
