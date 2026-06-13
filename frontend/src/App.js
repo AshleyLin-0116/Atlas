@@ -2989,7 +2989,7 @@ function App() {
             <label>Max Deep Work Block (minutes): </label>
             <input
               type="number"
-              min="30"
+              min="0"
               max="180"
               value={maxBlockLength}
               onChange={(e) => setMaxBlockLength(clamp(e.target.value, 30, 180))}
@@ -3019,10 +3019,10 @@ function App() {
             <button type="button" onClick={() => { setSavedNightBuffer(nightBuffer); saveSetting('nightBuffer', nightBuffer); }}>Confirm</button>
           </div>
           <div>
-            <label>Transition Gap (5-30 minutes): </label>
+            <label>Transition Gap (maximum 30 minutes): </label>
             <input
               type="number"
-              min="5"
+              min="0"
               max="30"
               value={transitionGap}
               onChange={(e) => setTransitionGap(clamp(e.target.value, 5, 30))}
@@ -3033,7 +3033,7 @@ function App() {
             <label>Shower duration (minutes): </label>
             <input
               type="number"
-              min="5"
+              min="0"
               max="60"
               value={showerDuration}
               onChange={(e) => setShowerDuration(clamp(e.target.value, 5, 60))}
