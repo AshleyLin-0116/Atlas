@@ -78,75 +78,29 @@ History & Analytics
 No ORM — raw SQL for transparency and simplicity. No auth yet (planned for Phase 3 deployment).
 
 ## Architecture
-┌─────────────────────────────────────────┐
 
-│                  User                   │
-
-│         (Browser / Mobile Web)          │
-
-└─────────────────┬───────────────────────┘
-
-│
-
-▼
-
-┌─────────────────────────────────────────┐
-
-│              Frontend                   │
-
-│         React (Vercel)                  │
-
-│                                         │
-
-│  • Schedule Generator (generateSchedule)│
-
-│  • Priority Scoring Engine              │
-
-│  • Duration Adjustment Engine           │
-
-│  • Analytics Dashboard                  │
-
-└─────────────────┬───────────────────────┘
-
-│ REST API (JSON)
-
-▼
-
-┌─────────────────────────────────────────┐
-
-│               Backend                   │
-
-│           FastAPI (Render)              │
-
-│                                         │
-
-│  • /tasks        • /meals               │
-
-│  • /history      • /commitments         │
-
-│  • /sleep        • /settings            │
-
-└─────────────────┬───────────────────────┘
-
-│ sqlite3
-
-▼
-
-┌─────────────────────────────────────────┐
-
-│              Database                   │
-
-│         SQLite (atlas.db)               │
-
-│                                         │
-
-│  • tasks         • task_history         │
-
-│  • meals         • commitments          │
-
-│  • sleep_schedule• settings             │
-
-└─────────────────────────────────────────┘
+```
+User (Browser)
+      │
+      ▼
+Frontend — React (Vercel)
+  - Schedule Generator
+  - Priority Scoring Engine
+  - Duration Adjustment Engine
+  - Analytics Dashboard
+      │
+      │ REST API (JSON)
+      ▼
+Backend — FastAPI (Render)
+  - /tasks, /history, /sleep
+  - /meals, /commitments, /settings
+      │
+      │ sqlite3
+      ▼
+Database — SQLite (atlas.db)
+  - tasks, task_history, meals
+  - commitments, sleep_schedule, settings
+```
 
 ### Component Responsibilities
 
