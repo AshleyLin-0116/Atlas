@@ -181,27 +181,27 @@ function App() {
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
 
   useEffect(() => {
-    fetch('http://localhost:8000/tasks')
+    fetch('${process.env.REACT_APP_API_URL}/tasks')
       .then((res) => res.json())
       .then((data) => setTasks(data))
       .catch((err) => console.error('Failed to load tasks:', err));
 
-    fetch('http://localhost:8000/history')
+    fetch('${process.env.REACT_APP_API_URL}/history')
       .then((res) => res.json())
       .then((data) => setHistory(data))
       .catch((err) => console.error('Failed to load history:', err));
 
-    fetch('http://localhost:8000/meals')
+    fetch('${process.env.REACT_APP_API_URL}/meals')
       .then((res) => res.json())
       .then((data) => setMeals(data))
       .catch((err) => console.error('Failed to load meals:', err));
 
-    fetch('http://localhost:8000/commitments')
+    fetch('${process.env.REACT_APP_API_URL}/commitments')
       .then((res) => res.json())
       .then((data) => setCommitments(data))
       .catch((err) => console.error('Failed to load commitments:', err));
 
-    fetch('http://localhost:8000/sleep')
+    fetch('${process.env.REACT_APP_API_URL}/sleep')
       .then((res) => res.json())
       .then((data) => {
         if (data) {
@@ -218,7 +218,7 @@ function App() {
       })
       .catch((err) => console.error('Failed to load sleep schedule:', err));
 
-    fetch('http://localhost:8000/settings')
+    fetch('${process.env.REACT_APP_API_URL}/settings')
       .then((res) => res.json())
       .then((data) => {
         if (data.clockFormat) { 
@@ -316,7 +316,7 @@ function App() {
       workOnDueDate,
       description
     };
-    fetch('http://localhost:8000/tasks', {
+    fetch('${process.env.REACT_APP_API_URL}/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newTask)
@@ -340,7 +340,7 @@ function App() {
   }
 
   function handleDeleteTask(id) {
-    fetch(`http://localhost:8000/tasks/${id}`, {
+    fetch(`${process.env.REACT_APP_API_URL}/tasks/${id}`, {
       method: 'DELETE'
     })
       .then(() => {
@@ -382,7 +382,7 @@ function App() {
       flexDuration: mealFlexDuration,
       flexPreference: mealFlexPreference
     };
-    fetch('http://localhost:8000/meals', {
+    fetch('${process.env.REACT_APP_API_URL}/meals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newMeal)
@@ -402,7 +402,7 @@ function App() {
   }
 
   function handleDeleteMeal(id) {
-    fetch(`http://localhost:8000/meals/${id}`, { method: 'DELETE' })
+    fetch(`${process.env.REACT_APP_API_URL}/meals/${id}`, { method: 'DELETE' })
       .then(() => setMeals(meals.filter((meal) => meal.id !== id)))
       .catch((err) => console.error('Failed to delete meal:', err));
   }
@@ -446,7 +446,7 @@ function App() {
       flexPreference: commitmentFlexPreference,
       days: commitmentDays.join(',')
     };
-    fetch('http://localhost:8000/commitments', {
+    fetch('${process.env.REACT_APP_API_URL}/commitments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newCommitment)
@@ -468,7 +468,7 @@ function App() {
   }
 
   function handleDeleteCommitment(id) {
-    fetch(`http://localhost:8000/commitments/${id}`, { method: 'DELETE' })
+    fetch(`${process.env.REACT_APP_API_URL}/commitments/${id}`, { method: 'DELETE' })
       .then(() => setCommitments(commitments.filter((c) => c.id !== id)))
       .catch((err) => console.error('Failed to delete commitment:', err));
   }
@@ -491,7 +491,7 @@ function App() {
       alert('Your wake and sleep times are less than 1 hour apart. Please check your schedule.');
       return;
     }
-    fetch('http://localhost:8000/sleep', {
+    fetch('${process.env.REACT_APP_API_URL}/sleep', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ wakeTime, sleepTime })
@@ -1076,7 +1076,7 @@ function App() {
       alert('Please enter how long the task took (in minutes).');
       return;
     }
-    fetch(`http://localhost:8000/tasks/${taskId}/feedback`, {
+    fetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/feedback`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1109,7 +1109,7 @@ function App() {
         setActualDifficulty(5);
         setCompletionStatus('');
         setManualStartTime('');
-        fetch('http://localhost:8000/history')
+        fetch('${process.env.REACT_APP_API_URL}/history')
           .then((res) => res.json())
           .then((data) => setHistory(data))
           .catch((err) => console.error('Failed to reload history:', err));
@@ -1386,7 +1386,7 @@ function App() {
   }
 
   function saveSetting(key, value) {
-    fetch('http://localhost:8000/settings', {
+    fetch('${process.env.REACT_APP_API_URL}/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value: String(value) })
@@ -1440,7 +1440,7 @@ function App() {
       workOnDueDate: editWorkOnDueDate,
       description: editDescription
     };
-    fetch(`http://localhost:8000/tasks/${taskId}`, {
+    fetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedTask)
@@ -1479,7 +1479,7 @@ function App() {
       flexDuration: editMealFlexDuration,
       flexPreference: editMealFlexPreference
     };
-    fetch(`http://localhost:8000/meals/${mealId}`, {
+    fetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedMeal)
@@ -1517,7 +1517,7 @@ function App() {
       flexPreference: editCommitmentFlexPreference,
       days: editCommitmentDays.join(',')
     };
-    fetch(`http://localhost:8000/commitments/${commitmentId}`, {
+    fetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedCommitment)
@@ -1531,7 +1531,7 @@ function App() {
   }
 
   function handleLogActualMeal(mealId) {
-    fetch(`http://localhost:8000/meals/${mealId}/actual`, {
+    fetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}/actual`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1561,7 +1561,7 @@ function App() {
     if (actualSleepTime) {
       payload.actual_sleep = actualSleepTime;
     }
-    fetch('http://localhost:8000/sleep/actual', {
+    fetch('${process.env.REACT_APP_API_URL}/sleep/actual', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
