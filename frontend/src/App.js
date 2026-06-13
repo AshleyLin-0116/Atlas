@@ -264,6 +264,7 @@ function App() {
         }
       })
       .catch((err) => console.error('Failed to load settings:', err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function classifyTask(name, difficulty) {
