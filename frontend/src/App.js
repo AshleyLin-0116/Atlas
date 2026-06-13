@@ -927,17 +927,12 @@ function App() {
       }
     }
 
-    const categoryMultipliers = getCategoryMultipliers();
-
     for (const task of orderedTasks) {
       if (!task.duration || Number(task.duration) <= 0) {
         continue;
       }
-      const multiplier = task.category && categoryMultipliers[task.category]
-        ? categoryMultipliers[task.category]
-        : 1;
-      let remaining = Math.round(Number(task.duration) * multiplier);
-      const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
+      const { multiplier } = getTaskMultiplier(task);
+      let remaining = Math.round(Number(task.duration) * multiplier);      const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
       let currentTime = getNextFreeStart(wake);
 
       const isOccupiedAt = (start, end) => {
@@ -1025,16 +1020,16 @@ function App() {
       summary.push(`Using actual sleep times — ${parts.join(', ')}`);
     }
 
-    const multipliers = getCategoryMultipliers();
-    const adjustedTasks = tasks.filter((t) => {
-      return t.category && multipliers[t.category] && multipliers[t.category] !== 1;
-    });
-    adjustedTasks.forEach((t) => {
-      const m = multipliers[t.category];
+    tasks.forEach((t) => {
+      const { multiplier: m, source, key } = getTaskMultiplier(t);
+      if (m === 1 || source === 'none') {
+        return;
+      }
       const adjusted = Math.round(Number(t.duration) * m);
       const diff = adjusted - Number(t.duration);
+      const sourceLabel = source === 'task' ? `your "${key}" task history` : `${key} category history`;
       summary.push(
-        `${t.taskName}: duration adjusted from ${t.duration} to ${adjusted} min (${diff > 0 ? '+' : ''}${diff} min based on ${t.category} history)`
+        `${t.taskName}: duration adjusted from ${t.duration} to ${adjusted} min (${diff > 0 ? '+' : ''}${diff} min based on ${sourceLabel})`
       );
     });
 
@@ -1289,6 +1284,45 @@ function App() {
     return multipliers;
   }
 
+  function getTaskKey(task) {
+    if (!task.taskName) {
+      return task.category || 'uncategorized';
+    }
+    const nameLower = task.taskName.toLowerCase();
+    const stopWords = ['homework', 'assignment', 'project', 'work', 'study', 'for', 'the', 'and', 'a', 'an', 'of', 'to'];
+    const words = nameLower
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-z]/g, ''))
+      .filter((w) => w.length > 2 && !stopWords.includes(w));
+    if (words.length === 0) {
+      return task.category || 'uncategorized';
+    }
+    return words[0];
+  }
+
+  function getTaskMultiplier(task) {
+    const taskKey = getTaskKey(task);
+    const taskMatches = history.filter((h) => {
+      if (!h.estimated_duration || !h.actual_duration || h.actual_duration === 0) {
+        return false;
+      }
+      return getTaskKey({ taskName: h.taskName, category: h.category }) === taskKey;
+    });
+
+    if (taskMatches.length >= 2) {
+      const totalEstimated = taskMatches.reduce((sum, h) => sum + h.estimated_duration, 0);
+      const totalActual = taskMatches.reduce((sum, h) => sum + h.actual_duration, 0);
+      return { multiplier: totalActual / totalEstimated, source: 'task', key: taskKey };
+    }
+
+    const categoryMultipliers = getCategoryMultipliers();
+    if (task.category && categoryMultipliers[task.category]) {
+      return { multiplier: categoryMultipliers[task.category], source: 'category', key: task.category };
+    }
+
+    return { multiplier: 1, source: 'none', key: null };
+  }
+
   function handleStartTask(taskId) {
     setActiveTaskId(taskId);
     setTaskStartTime(new Date());
@@ -1516,19 +1550,27 @@ function App() {
   }
 
   function handleLogActualSleep() {
-    DEBUG && console.log('Logging actual sleep:', { actualWakeTime, actualSleepTime });
+    if (!actualWakeTime && !actualSleepTime) {
+      alert('Please enter at least one actual time before saving.');
+      return;
+    }
+    const payload = {};
+    if (actualWakeTime) {
+      payload.actual_wake = actualWakeTime;
+    }
+    if (actualSleepTime) {
+      payload.actual_sleep = actualSleepTime;
+    }
     fetch('http://localhost:8000/sleep/actual', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        actual_wake: actualWakeTime,
-        actual_sleep: actualSleepTime
+        actual_wake: actualWakeTime || null,
+        actual_sleep: actualSleepTime || null
       })
     })
       .then(() => {
         setShowSleepFeedback(false);
-        setActualWakeTime('');
-        setActualSleepTime('');
       })
       .catch((err) => console.error('Failed to log actual sleep:', err));
   }
@@ -1849,36 +1891,20 @@ function App() {
                   <p>Importance: {task.importance}</p>
                   <p>Personal Priority: {task.userPreference}</p>
                   {(() => {
-                    const multipliers = getCategoryMultipliers();
-                    const multiplier = task.category && multipliers[task.category]
-                      ? multipliers[task.category]
-                      : 1;
+                    const { multiplier, source, key } = getTaskMultiplier(task);
                     const adjusted = Math.round(Number(task.duration) * multiplier);
+                    const sourceLabel = source === 'task'
+                      ? `your "${key}" task history`
+                      : source === 'category'
+                      ? `your ${key} history`
+                      : null;
                     return (
                       <div>
                         <p>Duration: {task.duration} minutes (estimated)</p>
-                        {multiplier !== 1 && (
+                        {multiplier !== 1 && sourceLabel && (
                           <p>Adjusted duration: {adjusted} minutes
-                            ({multiplier > 1 ? '+' : ''}{((multiplier - 1) * 100).toFixed(0)}% based on your {task.category} history)
+                            ({multiplier > 1 ? '+' : ''}{((multiplier - 1) * 100).toFixed(0)}% based on {sourceLabel})
                           </p>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  {(() => {
-                    const categoryHistory = history.filter(
-                      (h) => h.category === task.category && h.completion_status
-                    );
-                    const hasData = task.category && categoryHistory.length >= 2;
-                    const completed = hasData
-                      ? categoryHistory.filter((h) => h.completion_status === 'Completed').length
-                      : null;
-                    const rate = hasData ? ((completed / categoryHistory.length) * 100).toFixed(0) : null;
-                    return (
-                      <div>
-                        <p>Priority Score: {calculatePriorityScore(task)}</p>
-                        {hasData && (
-                          <p>Consistency: {rate}% completion rate in {task.category}</p>
                         )}
                       </div>
                     );
@@ -2159,13 +2185,20 @@ function App() {
           {sleepScheduleSaved && (
             <div>
               <p>Sleep schedule saved — wake up at {formatTime(wakeTime)}, sleep at {formatTime(sleepTime)}.</p>
+              {actualWakeTime && (
+                <p>Actually woke up at {formatTime(actualWakeTime)}</p>
+              )}
+              {actualSleepTime && (
+                <p>Actually slept at {formatTime(actualSleepTime)}</p>
+              )}
               {showSleepFeedback ? (
                 <div>
-                  <h4>What actually happened?</h4>
+                  <h4>Log Actual Sleep Times</h4>
+                  <p>Leave either field unchanged if you woke up / slept at the planned time.</p>
                   <div>
                     <label>Actual wake-up time: </label>
                     <TimePicker
-                      value={actualWakeTime}
+                      value={actualWakeTime || wakeTime}
                       onChange={setActualWakeTime}
                       clockFormat={savedClockFormat}
                     />
@@ -2173,7 +2206,7 @@ function App() {
                   <div>
                     <label>Actual sleep time: </label>
                     <TimePicker
-                      value={actualSleepTime}
+                      value={actualSleepTime || sleepTime}
                       onChange={setActualSleepTime}
                       clockFormat={savedClockFormat}
                     />
@@ -2642,32 +2675,69 @@ function App() {
               ))}
 
               <h3>Category Breakdown</h3>
-              {Object.keys(calculateCategoryStats()).length === 0 ? (
-                <p>No category data yet.</p>
-              ) : (
-                Object.entries(calculateCategoryStats()).map(([category, stats]) => (
-                  <div key={category}>
-                    <strong>{category}</strong>
-                    <p>Tasks tracked: {stats.count}</p>
-                    <p>Average estimated duration: {(stats.totalEstimated / stats.count).toFixed(1)} minutes</p>
-                    <p>Average actual duration: {(stats.totalActual / stats.count).toFixed(1)} minutes</p>
-                    {(() => {
-                      const multipliers = getCategoryMultipliers();
-                      const m = multipliers[category];
-                      if (!m) return <p>Not enough data to adjust estimates yet (need 2+ completed tasks).</p>;
-                      return (
-                        <p>
-                          Duration multiplier: {m.toFixed(2)}×
-                          {m > 1
-                            ? ` — you typically take ${((m - 1) * 100).toFixed(0)}% longer than estimated`
-                            : ` — you typically finish ${((1 - m) * 100).toFixed(0)}% faster than estimated`}
-                        </p>
-                      );
-                    })()}
-                    <p>Completed: {stats.completed} | Partially: {stats.partiallyCompleted} | Not completed: {stats.notCompleted}</p>
-                  </div>
-                ))
-              )}
+              {Object.entries(calculateCategoryStats()).map(([cat, stats]) => (
+                <div key={cat}>
+                  <strong>{cat}</strong>
+                  <p>Tasks tracked: {stats.count}</p>
+                  <p>Average estimated duration: {(stats.totalEstimated / stats.count).toFixed(1)} minutes</p>
+                  <p>Average actual duration: {(stats.totalActual / stats.count).toFixed(1)} minutes</p>
+                  {(() => {
+                    const multipliers = getCategoryMultipliers();
+                    const m = multipliers[cat];
+                    if (!m) {
+                      return <p>Not enough data to adjust estimates yet (need 2+ completed tasks).</p>;
+                    }
+                    return (
+                      <p>
+                        Category multiplier: {m.toFixed(2)}×
+                        {m > 1
+                          ? ` — you typically take ${((m - 1) * 100).toFixed(0)}% longer than estimated`
+                          : ` — you typically finish ${((1 - m) * 100).toFixed(0)}% faster than estimated`}
+                      </p>
+                    );
+                  })()}
+                  <p>Completed: {stats.completed} | Partially: {stats.partiallyCompleted} | Not completed: {stats.notCompleted}</p>
+                  {(() => {
+                    const taskKeys = [...new Set(
+                      history
+                        .filter((h) => h.category === cat)
+                        .map((h) => getTaskKey({ taskName: h.taskName, category: h.category }))
+                    )];
+                    const taskLevelData = taskKeys
+                      .map((key) => {
+                        const matches = history.filter((h) =>
+                          h.category === cat &&
+                          getTaskKey({ taskName: h.taskName, category: h.category }) === key &&
+                          h.estimated_duration && h.actual_duration
+                        );
+                        if (matches.length < 2) {
+                          return null;
+                        }
+                        const totalEst = matches.reduce((s, h) => s + h.estimated_duration, 0);
+                        const totalAct = matches.reduce((s, h) => s + h.actual_duration, 0);
+                        const m = totalAct / totalEst;
+                        return { key, count: matches.length, multiplier: m };
+                      })
+                      .filter(Boolean);
+                    if (taskLevelData.length === 0) {
+                      return null;
+                    }
+                    return (
+                      <div>
+                        <p><strong>Task-level breakdown:</strong></p>
+                        {taskLevelData.map(({ key, count, multiplier: m }) => (
+                          <p key={key}>
+                            "{key}": {m.toFixed(2)}× ({count} sessions —
+                            {m > 1
+                              ? ` takes ${((m - 1) * 100).toFixed(0)}% longer than estimated`
+                              : ` finishes ${((1 - m) * 100).toFixed(0)}% faster than estimated`})
+                          </p>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              ))}
 
               <h3>Productive Time Analysis</h3>
               {history.filter((h) => h.start_time).length === 0 ? (
