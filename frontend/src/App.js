@@ -3036,7 +3036,7 @@ function App() {
               min="0"
               max="60"
               value={showerDuration}
-              onChange={(e) => setShowerDuration(clamp(e.target.value, 5, 60))}
+              onChange={(e) => setShowerDuration(clamp(e.target.value, 0, 60))}
             />
             <button type="button" onClick={() => { setSavedShowerDuration(showerDuration); saveSetting('showerDuration', showerDuration); }}>Confirm</button>
           </div>
