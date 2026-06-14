@@ -243,6 +243,22 @@ class Setting(BaseModel):
 def read_root():
     return {"message": "Atlas backend is running"}
 
+@app.post("/admin/reset-tables")
+def reset_tables():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DROP TABLE IF EXISTS settings CASCADE")
+    cur.execute("DROP TABLE IF EXISTS task_history CASCADE")
+    cur.execute("DROP TABLE IF EXISTS tasks CASCADE")
+    cur.execute("DROP TABLE IF EXISTS meals CASCADE")
+    cur.execute("DROP TABLE IF EXISTS commitments CASCADE")
+    cur.execute("DROP TABLE IF EXISTS sleep_schedule CASCADE")
+    cur.execute("DROP TABLE IF EXISTS users CASCADE")
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Tables dropped"}
+
 @app.post("/auth/register")
 def register(user: UserRegister):
     conn = get_db()
