@@ -2992,7 +2992,7 @@ function App() {
               min="0"
               max="180"
               value={maxBlockLength}
-              onChange={(e) => setMaxBlockLength(clamp(e.target.value, 30, 180))}
+              onChange={(e) => setMaxBlockLength(clamp(e.target.value, 0, 180))}
             />
             <button type="button" onClick={() => { setSavedMaxBlockLength(maxBlockLength); saveSetting('maxBlockLength', maxBlockLength); }}>Confirm</button>
           </div>
