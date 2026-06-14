@@ -32,6 +32,30 @@ def get_db():
     )
     return conn
 
+def normalize(row):
+    if not row:
+        return None
+    key_map = {
+        'taskname': 'taskName',
+        'tasktype': 'taskType',
+        'userpreference': 'userPreference',
+        'workonduedate': 'workOnDueDate',
+        'mealname': 'mealName',
+        'mealstart': 'mealStart',
+        'mealend': 'mealEnd',
+        'commutetime': 'commuteTime',
+        'timemode': 'timeMode',
+        'flexduration': 'flexDuration',
+        'flexpreference': 'flexPreference',
+        'commitmentname': 'commitmentName',
+        'commitmentstart': 'commitmentStart',
+        'commitmentend': 'commitmentEnd',
+        'commitmenttype': 'commitmentType',
+        'waketime': 'wakeTime',
+        'sleeptime': 'sleepTime',
+    }
+    return {key_map.get(k, k): v for k, v in dict(row).items()}
+
 def init_db():
     conn = get_db()
     cur = conn.cursor()
@@ -266,7 +290,7 @@ def get_tasks(user_id: int = Depends(get_current_user)):
     tasks = cur.fetchall()
     cur.close()
     conn.close()
-    return [dict(task) for task in tasks]
+    return [normalize(t) for t in tasks]
 
 @app.post("/tasks")
 def add_task(task: Task, user_id: int = Depends(get_current_user)):
@@ -284,7 +308,7 @@ def add_task(task: Task, user_id: int = Depends(get_current_user)):
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_user)):
@@ -304,7 +328,7 @@ def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_use
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.delete("/tasks/{task_id}")
 def delete_task(task_id: int, user_id: int = Depends(get_current_user)):
@@ -354,7 +378,7 @@ def get_history(user_id: int = Depends(get_current_user)):
     history = cur.fetchall()
     cur.close()
     conn.close()
-    return [dict(h) for h in history]
+    return [normalize(h) for h in history]
 
 @app.get("/meals")
 def get_meals(user_id: int = Depends(get_current_user)):
@@ -364,7 +388,7 @@ def get_meals(user_id: int = Depends(get_current_user)):
     meals = cur.fetchall()
     cur.close()
     conn.close()
-    return [dict(m) for m in meals]
+    return [normalize(m) for m in meals]
 
 @app.post("/meals")
 def add_meal(meal: Meal, user_id: int = Depends(get_current_user)):
@@ -381,7 +405,7 @@ def add_meal(meal: Meal, user_id: int = Depends(get_current_user)):
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.put("/meals/{meal_id}")
 def update_meal(meal_id: int, meal: Meal, user_id: int = Depends(get_current_user)):
@@ -398,7 +422,7 @@ def update_meal(meal_id: int, meal: Meal, user_id: int = Depends(get_current_use
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.patch("/meals/{meal_id}/actual")
 def log_actual_meal(meal_id: int, data: ActualMealTime, user_id: int = Depends(get_current_user)):
@@ -412,7 +436,7 @@ def log_actual_meal(meal_id: int, data: ActualMealTime, user_id: int = Depends(g
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.delete("/meals/{meal_id}")
 def delete_meal(meal_id: int, user_id: int = Depends(get_current_user)):
@@ -432,7 +456,7 @@ def get_commitments(user_id: int = Depends(get_current_user)):
     commitments = cur.fetchall()
     cur.close()
     conn.close()
-    return [dict(c) for c in commitments]
+    return [normalize(c) for c in commitments]
 
 @app.post("/commitments")
 def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_user)):
@@ -451,7 +475,7 @@ def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_us
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.put("/commitments/{commitment_id}")
 def update_commitment(commitment_id: int, commitment: Commitment, user_id: int = Depends(get_current_user)):
@@ -471,7 +495,7 @@ def update_commitment(commitment_id: int, commitment: Commitment, user_id: int =
     conn.commit()
     cur.close()
     conn.close()
-    return dict(result)
+    return normalize(result)
 
 @app.delete("/commitments/{commitment_id}")
 def delete_commitment(commitment_id: int, user_id: int = Depends(get_current_user)):
@@ -495,7 +519,7 @@ def get_sleep(user_id: int = Depends(get_current_user)):
     cur.close()
     conn.close()
     if sleep:
-        return dict(sleep)
+        return normalize(sleep)
     return None
 
 @app.post("/sleep")
