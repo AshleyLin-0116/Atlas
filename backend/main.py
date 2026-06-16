@@ -318,7 +318,7 @@ def add_task(task: Task, user_id: int = Depends(get_current_user)):
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, task.taskName, task.deadline, task.difficulty, task.importance,
         task.userPreference, task.duration, task.taskType, task.category,
-        task.workOnDueDate, task.description)
+        int(task.workOnDueDate), task.description)
     )
     result = cur.fetchone()
     conn.commit()
