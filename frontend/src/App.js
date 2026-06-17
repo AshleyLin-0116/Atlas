@@ -954,7 +954,6 @@ function App() {
         }
         start++;
       }
-      let fallback = getNextFreeStart(wake);
       const fallbackPreferences = ['evening', 'afternoon', 'morning', 'early_morning', 'night'];
       for (const pref of fallbackPreferences) {
         if (pref === preference) continue; // already tried this one
