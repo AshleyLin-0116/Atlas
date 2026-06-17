@@ -9,6 +9,8 @@ from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
+import threading
+import urllib.request
 
 SECRET_KEY = "atlas-secret-key-change-in-production"
 ALGORITHM = "HS256"
@@ -157,6 +159,19 @@ def init_db():
     conn.close()
 
 init_db()
+
+def keep_alive():
+    def ping():
+        while True:
+            try:
+                urllib.request.urlopen('https://atlas-backend-476l.onrender.com/')
+            except Exception:
+                pass
+            threading.Event().wait(600)  # ping every 10 minutes
+    t = threading.Thread(target=ping, daemon=True)
+    t.start()
+
+keep_alive()
 
 def create_token(user_id: int, username: str):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
