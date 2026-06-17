@@ -955,33 +955,26 @@ function App() {
         start++;
       }
       let fallback = getNextFreeStart(wake);
-      while (fallback + totalDuration <= sleep) {
-        if (!isOccupied(fallback, fallback + totalDuration)) {
-          if (commuteTime > 0) {
-            schedule.push({
-              start: toTimeString(fallback),
-              end: toTimeString(fallback + commuteTime),
-              label: `Commute to ${label}`,
-              type: 'commute'
-            });
+      const fallbackPreferences = ['evening', 'afternoon', 'morning', 'early_morning', 'night'];
+      for (const pref of fallbackPreferences) {
+        if (pref === preference) continue; // already tried this one
+        const w = getPreferenceWindow(pref);
+        const wStart = Math.max(wake, w.start);
+        const wEnd = Math.min(sleep, w.end);
+        let t = getNextFreeStart(wStart);
+        while (t + totalDuration <= wEnd) {
+          if (!isOccupied(t, t + totalDuration)) {
+            if (commuteTime > 0) {
+              schedule.push({ start: toTimeString(t), end: toTimeString(t + commuteTime), label: `Commute to ${label}`, type: 'commute' });
+            }
+            schedule.push({ start: toTimeString(t + commuteTime), end: toTimeString(t + commuteTime + duration), label, type });
+            if (commuteTime > 0) {
+              schedule.push({ start: toTimeString(t + commuteTime + duration), end: toTimeString(t + totalDuration), label: `Commute back from ${label}`, type: 'commute' });
+            }
+            return true;
           }
-          schedule.push({
-            start: toTimeString(fallback + commuteTime),
-            end: toTimeString(fallback + commuteTime + duration),
-            label,
-            type
-          });
-          if (commuteTime > 0) {
-            schedule.push({
-              start: toTimeString(fallback + commuteTime + duration),
-              end: toTimeString(fallback + totalDuration),
-              label: `Commute back from ${label}`,
-              type: 'commute'
-            });
-          }
-          return true;
+          t++;
         }
-        fallback++;
       }
       return false;
     };
