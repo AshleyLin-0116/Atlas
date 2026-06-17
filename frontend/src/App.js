@@ -1882,10 +1882,10 @@ function App() {
               </select>
             </div>
             <div>
-              <label>Difficulty (1-10): </label>
+              <label>Difficulty (0-10): </label>
               <input
                 type="range"
-                min="1"
+                min="0"
                 max="10"
                 step="0.01"
                 value={difficulty}
@@ -1898,7 +1898,7 @@ function App() {
               {editingDifficulty ? (
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="10"
                   step="0.01"
                   value={difficulty}
@@ -1913,10 +1913,10 @@ function App() {
               )}
             </div>
             <div>
-              <label>Importance (1-10): </label>
+              <label>Importance (0-10): </label>
               <input
                 type="range"
-                min="1"
+                min="0"
                 max="10"
                 step="0.01"
                 value={importance}
@@ -1925,7 +1925,7 @@ function App() {
               {editingImportance ? (
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="10"
                   step="0.01"
                   value={importance}
@@ -1940,10 +1940,10 @@ function App() {
               )}
             </div>
             <div>
-              <label>Personal Priority (1-10): </label>
+              <label>Personal Priority (0-10): </label>
               <input
                 type="range"
-                min="1"
+                min="0"
                 max="10"
                 step="0.01"
                 value={userPreference}
@@ -1952,7 +1952,7 @@ function App() {
               {editingUserPreference ? (
                 <input
                   type="number"
-                  min="1"
+                  min="0"
                   max="10"
                   step="0.01"
                   value={userPreference}
@@ -1970,7 +1970,7 @@ function App() {
               <label>Estimated Duration (minutes): </label>
               <input
                 type="number"
-                min="1"
+                min="0"
                 placeholder="e.g. 60"
                 value={duration}
                 onChange={(e) => setDuration(e.target.value)}
@@ -2098,7 +2098,7 @@ function App() {
                                   <label>Or enter duration manually (minutes): </label>
                                   <input
                                     type="number"
-                                    min="1"
+                                    min="0"
                                     value={actualDuration}
                                     onChange={(e) => setActualDuration(e.target.value)}
                                   />
@@ -2107,10 +2107,10 @@ function App() {
                             )}
                           </div>
                           <div>
-                            <label>How difficult was it actually? (1-10): </label>
+                            <label>How difficult was it actually? (0-10): </label>
                             <input
                               type="range"
-                              min="1"
+                              min="0"
                               max="10"
                               step="0.01"
                               value={actualDifficulty}
@@ -2119,7 +2119,7 @@ function App() {
                             {editingActualDifficulty ? (
                               <input
                                 type="number"
-                                min="1"
+                                min="0"
                                 max="10"
                                 step="0.01"
                                 value={actualDifficulty}
@@ -2217,10 +2217,10 @@ function App() {
                         </select>
                       </div>
                       <div>
-                        <label>Difficulty (1-10): </label>
+                        <label>Difficulty (0-10): </label>
                         <input
                           type="range"
-                          min="1"
+                          min="0"
                           max="10"
                           step="0.01"
                           value={editDifficulty}
@@ -2229,10 +2229,10 @@ function App() {
                         <span>{editDifficulty}</span>
                       </div>
                       <div>
-                        <label>Importance (1-10): </label>
+                        <label>Importance (0-10): </label>
                         <input
                           type="range"
-                          min="1"
+                          min="0"
                           max="10"
                           step="0.01"
                           value={editImportance}
@@ -2241,10 +2241,10 @@ function App() {
                         <span>{editImportance}</span>
                       </div>
                       <div>
-                        <label>Personal Priority (1-10): </label>
+                        <label>Personal Priority (0-10): </label>
                         <input
                           type="range"
-                          min="1"
+                          min="0"
                           max="10"
                           step="0.01"
                           value={editUserPreference}
@@ -2256,7 +2256,7 @@ function App() {
                         <label>Estimated Duration (minutes): </label>
                         <input
                           type="number"
-                          min="1"
+                          min="0"
                           value={editDuration}
                           onChange={(e) => setEditDuration(e.target.value)}
                         />
@@ -2391,7 +2391,7 @@ function App() {
                   <label>Duration (minutes): </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     value={mealFlexDuration}
                     onChange={(e) => setMealFlexDuration(Number(e.target.value))}
                   />
@@ -2456,7 +2456,7 @@ function App() {
                           <label>Duration (minutes): </label>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             value={editMealFlexDuration}
                             onChange={(e) => setEditMealFlexDuration(Number(e.target.value))}
                           />
@@ -2565,7 +2565,7 @@ function App() {
                   <label>Duration (minutes): </label>
                   <input
                     type="number"
-                    min="1"
+                    min="0"
                     value={commitmentFlexDuration}
                     onChange={(e) => setCommitmentFlexDuration(Number(e.target.value))}
                   />
@@ -2660,7 +2660,7 @@ function App() {
                           <label>Duration (minutes): </label>
                           <input
                             type="number"
-                            min="1"
+                            min="0"
                             value={editCommitmentFlexDuration}
                             onChange={(e) => setEditCommitmentFlexDuration(Number(e.target.value))}
                           />
