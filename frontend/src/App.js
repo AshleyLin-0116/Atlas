@@ -1151,7 +1151,6 @@ function App() {
   }
 
   function handleSubmitFeedback(taskId) {
-    DEBUG && console.log('handleSubmitFeedback called with taskId:', taskId);
     if (!completionStatus) {
       alert('Please select a completion status.');
       return;
@@ -1172,11 +1171,9 @@ function App() {
       })
     })
       .then((res) => {
-        DEBUG && console.log('Response status:', res.status);
         return res.json();
       })
       .then((data) => {
-        DEBUG && console.log('Response data:', data);
         setTasks(tasks.map((task) => {
           if (task.id === taskId) {
             return {
@@ -1476,7 +1473,7 @@ function App() {
       body: JSON.stringify({ key, value: String(value) })
     })
       .then((res) => res.json())
-      .then((data) => { DEBUG && console.log('Setting saved:', data); })
+      .then(() => {})
       .catch((err) => console.error('Failed to save setting:', err));
   }
 
@@ -1511,7 +1508,6 @@ function App() {
       alert('Duration must be a positive number.');
       return;
     }
-    DEBUG && console.log('Updating task:', taskId);
     const updatedTask = {
       taskName: editTaskName.trim(),
       deadline: editDeadline,
