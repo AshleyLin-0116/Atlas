@@ -75,6 +75,7 @@ function FlexPreferenceSelect({ value, onChange }) {
 }
 
 function App() {
+  // eslint-disable-next-line no-unused-vars
   const DEBUG = process.env.NODE_ENV === 'development';
   const clamp = (value, min, max) => Math.min(Math.max(Number(value), min), max);
   const authFetch = (url, options = {}) => {
