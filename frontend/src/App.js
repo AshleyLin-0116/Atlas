@@ -197,6 +197,9 @@ function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [nlInput, setNlInput] = useState('');
+  const [nlLoading, setNlLoading] = useState(false);
+  const [nlError, setNlError] = useState('');
 
   useEffect(() => {
     authFetch(`${process.env.REACT_APP_API_URL}/tasks`)
@@ -370,6 +373,58 @@ function App() {
     setSleepTime('');
     setSleepScheduleSaved(false);
     setGeneratedSchedule([]);
+  }
+
+  async function handleNaturalLanguageInput() {
+    if (!nlInput.trim()) return;
+    setNlLoading(true);
+    setNlError('');
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-6',
+          max_tokens: 1000,
+          messages: [{
+            role: 'user',
+            content: `Today is ${today}. Parse this task description into JSON with these fields:
+  - taskName (string)
+  - deadline (YYYY-MM-DD string, infer from context like "Friday" or "next week")
+  - duration (integer, minutes)
+  - difficulty (number 0-10)
+  - importance (number 0-10)
+  - userPreference (number 0-10)
+  - category (one of: Coding, Homework, Reading, Studying, Writing, Project Work, Other)
+  - description (string, optional, empty string if none)
+  - workOnDueDate (boolean)
+
+  Return ONLY valid JSON, no markdown, no explanation.
+
+  Task: "${nlInput}"`
+          }]
+        })
+      });
+      const data = await response.json();
+      const text = data.content[0].text.trim();
+      const parsed = JSON.parse(text);
+      setTaskName(parsed.taskName || '');
+      setDeadline(parsed.deadline || '');
+      setDuration(parsed.duration || '');
+      setDifficulty(parsed.difficulty ?? 5);
+      setImportance(parsed.importance ?? 5);
+      setUserPreference(parsed.userPreference ?? 5);
+      setCategory(parsed.category || '');
+      setDescription(parsed.description || '');
+      setWorkOnDueDate(parsed.workOnDueDate ?? true);
+      setAutoTaskType(classifyTask(parsed.taskName || '', parsed.difficulty ?? 5));
+      setUserOverrideType(null);
+      setNlInput('');
+    } catch (err) {
+      setNlError('Could not parse that — try being more specific, or fill the form manually.');
+    }
+    setNlLoading(false);
   }
 
   function handleAddTask(e) {
@@ -921,6 +976,15 @@ function App() {
       return { start: wake, end: sleep };
     };
 
+    const isTooCloseToMeal = (start, end) => {
+      return schedule.some((block) => {
+        if (block.type !== 'meal') return false;
+        const blockStart = toMinutes(block.start);
+        const blockEnd = toMinutes(block.end);
+        return start < blockEnd + 300 && end > blockStart - 300;
+      });
+    };
+
     const placeFlexBlock = (label, duration, preference, type, commuteTime = 0) => {
       const totalDuration = duration + (commuteTime * 2);
       const window = getPreferenceWindow(preference);
@@ -928,7 +992,7 @@ function App() {
       const windowEnd = Math.min(sleep, window.end);
       let start = getNextFreeStart(windowStart);
       while (start + totalDuration <= windowEnd) {
-        if (!isOccupied(start, start + totalDuration)) {
+        if (!isOccupied(start, start + totalDuration) && (type !== 'meal' || !isTooCloseToMeal(start, start + totalDuration))) {
           if (commuteTime > 0) {
             schedule.push({
               start: toTimeString(start),
@@ -1828,6 +1892,22 @@ function App() {
 
         <section id="tasks">
           <h2>Tasks</h2>
+          <div>
+            <h3>Quick Add</h3>
+            <p>Describe your task in plain English — Atlas will fill in the form for you.</p>
+            <input
+              type="text"
+              placeholder='e.g. "Study for stats exam this Friday, 2 hours, pretty hard"'
+              value={nlInput}
+              onChange={(e) => setNlInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleNaturalLanguageInput(); }}
+              style={{ width: '100%' }}
+            />
+            <button type="button" onClick={handleNaturalLanguageInput} disabled={nlLoading}>
+              {nlLoading ? 'Parsing...' : 'Fill Form'}
+            </button>
+            {nlError && <p style={{ color: 'red' }}>{nlError}</p>}
+          </div>
           <form onSubmit={handleAddTask}>
             <div>
               <label>Task Name: </label>
@@ -2041,6 +2121,7 @@ function App() {
                   })()}
                   <p>Work on due date: {task.workOnDueDate ? 'Yes' : 'No'}</p>
                   <p>Task Type: {task.taskType === 'deep' ? 'Deep Work' : 'Light Work'}</p>
+                  <p>Priority Score: {calculatePriorityScore(task)}/100</p>
                   {task.completion_status ? (
                     <div>
                       <p>Completion: {task.completion_status}</p>
