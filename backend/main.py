@@ -337,7 +337,7 @@ def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_use
         WHERE id = %s AND user_id = %s RETURNING *""",
         (task.taskName, task.deadline, task.difficulty, task.importance,
         task.userPreference, task.duration, task.taskType, task.category,
-        task.workOnDueDate, task.description, task_id, user_id)
+        int(task.workOnDueDate), task.description, task_id, user_id)  # <-- int() here
     )
     result = cur.fetchone()
     conn.commit()
