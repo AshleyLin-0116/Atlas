@@ -11,6 +11,8 @@ from jose import JWTError, jwt
 from datetime import datetime, timedelta
 import threading
 import urllib.request
+import httpx
+import os
 
 SECRET_KEY = "atlas-secret-key-change-in-production"
 ALGORITHM = "HS256"
@@ -590,3 +592,43 @@ def save_setting(setting: Setting, user_id: int = Depends(get_current_user)):
     cur.close()
     conn.close()
     return setting.model_dump()
+
+@app.post("/parse-task")
+async def parse_task(request: dict, user_id: int = Depends(get_current_user)):
+    from datetime import date
+    today = date.today().isoformat()
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": os.environ.get("ANTHROPIC_API_KEY"),
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 1000,
+                "messages": [{
+                    "role": "user",
+                    "content": f"""Today is {today}. Parse this task description into JSON with these fields:
+- taskName (string)
+- deadline (YYYY-MM-DD string, infer from context like "next Tuesday" or "next week")
+- duration (integer, minutes)
+- difficulty (number 0-10)
+- importance (number 0-10)
+- userPreference (number 0-10, default 5)
+- category (one of: Coding, Homework, Reading, Studying, Writing, Project Work, Other)
+- description (string, empty if none)
+- workOnDueDate (boolean, default true)
+
+Return ONLY valid JSON, no markdown, no explanation.
+
+Task: \"{request['text']}\""""
+                }]
+            },
+            timeout=30.0
+        )
+        data = response.json()
+        text = data["content"][0]["text"].strip()
+        import json
+        return json.loads(text)

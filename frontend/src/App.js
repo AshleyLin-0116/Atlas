@@ -380,35 +380,12 @@ function App() {
     setNlLoading(true);
     setNlError('');
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await authFetch(`${process.env.REACT_APP_API_URL}/parse-task`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 1000,
-          messages: [{
-            role: 'user',
-            content: `Today is ${today}. Parse this task description into JSON with these fields:
-  - taskName (string)
-  - deadline (YYYY-MM-DD string, infer from context like "Friday" or "next week")
-  - duration (integer, minutes)
-  - difficulty (number 0-10)
-  - importance (number 0-10)
-  - userPreference (number 0-10)
-  - category (one of: Coding, Homework, Reading, Studying, Writing, Project Work, Other)
-  - description (string, optional, empty string if none)
-  - workOnDueDate (boolean)
-
-  Return ONLY valid JSON, no markdown, no explanation.
-
-  Task: "${nlInput}"`
-          }]
-        })
+        body: JSON.stringify({ text: nlInput })
       });
-      const data = await response.json();
-      const text = data.content[0].text.trim();
-      const parsed = JSON.parse(text);
+      if (!response.ok) throw new Error('Parse failed');
+      const parsed = await response.json();
       setTaskName(parsed.taskName || '');
       setDeadline(parsed.deadline || '');
       setDuration(parsed.duration || '');
