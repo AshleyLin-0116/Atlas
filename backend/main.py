@@ -369,6 +369,7 @@ def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_use
 def delete_task(task_id: int, user_id: int = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
+    cur.execute("DELETE FROM task_history WHERE task_id = %s AND user_id = %s", (task_id, user_id))
     cur.execute("DELETE FROM tasks WHERE id = %s AND user_id = %s", (task_id, user_id))
     conn.commit()
     cur.close()
