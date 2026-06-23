@@ -1,22 +1,26 @@
+import threading
+import urllib.request
+import os
+from datetime import datetime, timedelta
+from typing import Optional
+
+import bcrypt
+import httpx
+import psycopg2
+import psycopg2.extras
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
-import os
-import psycopg2
-import psycopg2.extras
-from typing import Optional
-import bcrypt
 from jose import JWTError, jwt
-from datetime import datetime, timedelta
-import threading
-import urllib.request
-import httpx
-import os
+from pydantic import BaseModel
+
+# ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 SECRET_KEY = "atlas-secret-key-change-in-production"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+
+# ─── APP SETUP ────────────────────────────────────────────────────────────────
 
 app = FastAPI()
 
@@ -28,6 +32,8 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
+
+# ─── DATABASE ─────────────────────────────────────────────────────────────────
 
 def get_db():
     conn = psycopg2.connect(
@@ -162,6 +168,8 @@ def init_db():
 
 init_db()
 
+# ─── KEEP-ALIVE ───────────────────────────────────────────────────────────────
+
 def keep_alive():
     def ping():
         while True:
@@ -169,11 +177,13 @@ def keep_alive():
                 urllib.request.urlopen('https://atlas-backend-476l.onrender.com/')
             except Exception:
                 pass
-            threading.Event().wait(600)  # ping every 10 minutes
+            threading.Event().wait(600)
     t = threading.Thread(target=ping, daemon=True)
     t.start()
 
 keep_alive()
+
+# ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
 
 def create_token(user_id: int, username: str):
     expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
@@ -192,6 +202,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
         return user_id
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+# ─── MODELS ───────────────────────────────────────────────────────────────────
 
 class UserRegister(BaseModel):
     username: str
@@ -256,9 +268,13 @@ class Setting(BaseModel):
     key: str
     value: str
 
+# ─── ROUTES ───────────────────────────────────────────────────────────────────
+
 @app.get("/")
 def read_root():
     return {"message": "Atlas backend is running"}
+
+# ── Auth ──
 
 @app.post("/auth/register")
 def register(user: UserRegister):
@@ -298,6 +314,8 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_token(user['id'], user['username'])
     return {"access_token": token, "token_type": "bearer", "username": user['username']}
+
+# ── Tasks ──
 
 @app.get("/tasks")
 def get_tasks(user_id: int = Depends(get_current_user)):
@@ -339,7 +357,7 @@ def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_use
         WHERE id = %s AND user_id = %s RETURNING *""",
         (task.taskName, task.deadline, task.difficulty, task.importance,
         task.userPreference, task.duration, task.taskType, task.category,
-        int(task.workOnDueDate), task.description, task_id, user_id)  # <-- int() here
+        int(task.workOnDueDate), task.description, task_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()
@@ -396,6 +414,8 @@ def get_history(user_id: int = Depends(get_current_user)):
     cur.close()
     conn.close()
     return [normalize(h) for h in history]
+
+# ── Meals ──
 
 @app.get("/meals")
 def get_meals(user_id: int = Depends(get_current_user)):
@@ -465,6 +485,8 @@ def delete_meal(meal_id: int, user_id: int = Depends(get_current_user)):
     conn.close()
     return {"message": "Meal deleted"}
 
+# ── Commitments ──
+
 @app.get("/commitments")
 def get_commitments(user_id: int = Depends(get_current_user)):
     conn = get_db()
@@ -524,6 +546,8 @@ def delete_commitment(commitment_id: int, user_id: int = Depends(get_current_use
     conn.close()
     return {"message": "Commitment deleted"}
 
+# ── Sleep ──
+
 @app.get("/sleep")
 def get_sleep(user_id: int = Depends(get_current_user)):
     conn = get_db()
@@ -569,6 +593,8 @@ def log_actual_sleep(data: ActualSleepTime, user_id: int = Depends(get_current_u
     conn.close()
     return {"message": "Actual sleep logged"}
 
+# ── Settings ──
+
 @app.get("/settings")
 def get_settings(user_id: int = Depends(get_current_user)):
     conn = get_db()
@@ -593,24 +619,28 @@ def save_setting(setting: Setting, user_id: int = Depends(get_current_user)):
     conn.close()
     return setting.model_dump()
 
+# ── AI ──
+
 @app.post("/parse-task")
 async def parse_task(request: dict, user_id: int = Depends(get_current_user)):
+    import json
     from datetime import date
     today = date.today().isoformat()
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": os.environ.get("ANTHROPIC_API_KEY"),
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json"
-            },
-            json={
-                "model": "claude-sonnet-4-6",
-                "max_tokens": 1000,
-                "messages": [{
-                    "role": "user",
-                    "content": f"""Today is {today}. Parse this task description into JSON with these fields:
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": os.environ.get("ANTHROPIC_API_KEY"),
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 1000,
+                    "messages": [{
+                        "role": "user",
+                        "content": f"""Today is {today}. Parse this task description into JSON with these fields:
 - taskName (string)
 - deadline (YYYY-MM-DD string, infer from context like "next Tuesday" or "next week")
 - duration (integer, minutes)
@@ -624,11 +654,12 @@ async def parse_task(request: dict, user_id: int = Depends(get_current_user)):
 Return ONLY valid JSON, no markdown, no explanation.
 
 Task: \"{request['text']}\""""
-                }]
-            },
-            timeout=30.0
-        )
-        data = response.json()
-        text = data["content"][0]["text"].strip()
-        import json
-        return json.loads(text)
+                    }]
+                },
+                timeout=30.0
+            )
+            data = response.json()
+            text = data["content"][0]["text"].strip()
+            return json.loads(text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse task: {str(e)}")
