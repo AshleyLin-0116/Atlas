@@ -1,39 +1,33 @@
-# Atlas — Adaptive Daily Scheduler
+# Atlas (Adaptive Study Scheduler)
 
-Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability — then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
+Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
 
 The core idea: most scheduling tools treat your time as static. Atlas treats it as dynamic, adjusting to what actually happens and getting more accurate with each completed task.
 
-🔗 **Live Demo:** [atlas-delta-sable.vercel.app](https://atlas-delta-sable.vercel.app)
-
----
+🔗 **Live Demo:** 
 
 ## Why It Exists
 
 Students consistently underestimate how long tasks take, schedule work during low-energy hours, and fail to account for travel time, meals, and transitions. Existing tools (calendars, to-do apps) require manual planning and don't adapt to real behavior. Atlas automates the planning layer and closes the feedback loop between planned and actual.
 
----
-
 ## What It Does
 
-- **Generates daily schedules** — fills your available time with tasks, breaks, meals, and commitments automatically
-- **Prioritizes tasks dynamically** — ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
-- **Classifies deep vs. light work** — alternates cognitively demanding and lighter tasks to preserve focus
-- **Schedules around peak hours** — places hardest tasks during your self-reported most productive window
-- **Handles flexible and fixed commitments** — meals and commitments can have fixed times or be placed automatically in preferred windows
-- **Models commute time** — blocks travel to and from any commitment requiring transportation, including return trips
-- **Adapts to actual behavior** — uses logged actual wake/sleep times and meal times to adjust the schedule in real time
-- **Adjusts duration estimates** — computes per-category multipliers from history and silently corrects future task durations
-- **Parses tasks from natural language** — describe a task in plain English and Atlas fills the form automatically using Claude AI
-- **Collects behavioral feedback** — after each task, logs actual duration, actual difficulty, and completion status
-- **Tracks estimation accuracy** — compares estimated vs. actual duration per task and by category
-- **Identifies productive time patterns** — analyzes which time periods have the highest task completion rates
-- **Surfaces smart suggestions** — detects overdue tasks, consistent underestimation patterns, and peak productivity windows
-- **Weekly analytics** — summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
-- **Schedule notes** — after generation, flags any duration adjustments, sleep time shifts, or tasks that couldn't fit
-- **Persists everything** — all tasks, history, settings, and schedules saved to PostgreSQL
-
----
+- **Generates daily schedules** —> fills your available time with tasks, breaks, meals, and commitments automatically
+- **Prioritizes tasks dynamically** —> ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
+- **Classifies deep vs. light work** —> alternates cognitively demanding and lighter tasks to preserve focus
+- **Schedules around peak hours** —> places hardest tasks during your self-reported most productive window
+- **Handles flexible and fixed commitments** —> meals and commitments can have fixed times or be placed automatically in preferred windows
+- **Models commute time** —> blocks travel to and from any commitment requiring transportation, including return trips
+- **Adapts to actual behavior** —> uses logged actual wake/sleep times and meal times to adjust the schedule in real time
+- **Adjusts duration estimates** —> computes per-category multipliers from history and silently corrects future task durations
+- **Parses tasks from natural language** —> describe a task in plain English and Atlas fills the form automatically using Claude AI
+- **Collects behavioral feedback** —> after each task, logs actual duration, actual difficulty, and completion status
+- **Tracks estimation accuracy** —> compares estimated vs. actual duration per task and by category
+- **Identifies productive time patterns** —> analyzes which time periods have the highest task completion rates
+- **Surfaces smart suggestions** —> detects overdue tasks, consistent underestimation patterns, and peak productivity windows
+- **Weekly analytics** —> summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
+- **Schedule notes** —> after generation, flags any duration adjustments, sleep time shifts, or tasks that couldn't fit
+- **Persists everything** —> all tasks, history, settings, and schedules saved to PostgreSQL
 
 ## How It Works
 
@@ -75,8 +69,6 @@ History & Analytics
   completion rates by time of day, smart suggestions
 ```
 
----
-
 ## Tech Stack
 
 | Layer | Technology |
@@ -91,8 +83,6 @@ History & Analytics
 | Backend deployment | Render |
 
 No ORM — raw SQL for transparency and simplicity.
-
----
 
 ## Architecture
 
@@ -135,8 +125,6 @@ Backend — FastAPI (Render)
 - **Duration Adjustment Engine**: Computes per-task and per-category multipliers from history (`total actual / total estimated`) and silently adjusts scheduled durations. Requires 2+ history entries to activate.
 - **Database (PostgreSQL)**: Seven tables storing all user data. Auto-created on first backend run via `init_db()`.
 - **AI (Claude API)**: The `/parse-task` endpoint sends natural language input to `claude-sonnet-4-6` and returns structured task JSON. Requires `ANTHROPIC_API_KEY`.
-
----
 
 ## Quick Demo
 
@@ -186,8 +174,6 @@ Settings:
 💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — try scheduling deep work then.
 ```
 
----
-
 ## Project Structure
 
 ```
@@ -201,60 +187,41 @@ Atlas/
     └── main.py                 # FastAPI app — all REST endpoints, DB logic, and AI integration
 ```
 
-All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only — no business logic lives there.
-
----
+All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only, no business logic lives there.
 
 ## Setup
 
-### Prerequisites
-
-- Python 3.9+
-- Node.js 16+
-- A PostgreSQL database (local or hosted)
-- An Anthropic API key (for natural language task parsing)
-
 ### Backend
-
 ```bash
 cd backend
 pip install fastapi uvicorn pydantic psycopg2-binary bcrypt python-jose httpx
 ```
 
-Create a `.env` file or set the following environment variables:
-
+Set the following environment variables:
 ```
 DATABASE_URL=your_postgresql_connection_string
 ANTHROPIC_API_KEY=your_anthropic_api_key
 ```
 
-Then run:
-
 ```bash
 python -m uvicorn main:app --reload
 ```
-
 Runs at `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
 ### Frontend
-
 ```bash
 cd frontend
 npm install
 ```
 
 Create a `.env` file:
-
 ```
 REACT_APP_API_URL=http://localhost:8000
 ```
 
-Then run:
-
 ```bash
 npm start
 ```
-
 Runs at `http://localhost:3000`.
 
 ---
@@ -286,7 +253,6 @@ Runs at `http://localhost:3000`.
 | GET | `/history` | Full task history |
 | GET/POST | `/meals` | List all / add meal |
 | PUT | `/meals/{id}` | Edit meal |
-| DELETE | `/meals/{id}` | Delete meal |
 | PATCH | `/meals/{id}/actual` | Log actual meal times |
 | DELETE | `/meals/{id}` | Delete meal |
 | GET/POST | `/commitments` | List all / add commitment |
@@ -298,8 +264,6 @@ Runs at `http://localhost:3000`.
 | POST | `/parse-task` | Parse natural language into structured task JSON (AI) |
 
 All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token in the `Authorization` header.
-
----
 
 ## Current Status
 
@@ -345,12 +309,10 @@ All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token
 - AI suggestions and chat assistant
 - Per-day availability (different meals/sleep/commitments per day)
 
----
-
 ## Future Directions
 
-- **ML-based duration prediction** — train a lightweight regression model on task history to predict durations more accurately than simple averages, incorporating task type, category, time of day, and self-reported difficulty
+- **ML-based duration prediction**: train a lightweight regression model on task history to predict durations more accurately than simple averages, incorporating task type, category, time of day, and self-reported difficulty
 - **Disruption recovery** — detect when the day goes off-plan (late wake, skipped meal) and regenerate the remaining schedule in real time
-- **Calendar API integration** — pull commitments directly from Google Calendar instead of manual entry
-- **Weekly and semester views** — plan across multiple days with deadline-aware backscheduling
-- **Optimization algorithm research** — the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
+- **Calendar API integration**: pull commitments directly from Google Calendar instead of manual entry
+- **Weekly and semester views**: plan across multiple days with deadline-aware backscheduling
+- **Optimization algorithm research**: the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
