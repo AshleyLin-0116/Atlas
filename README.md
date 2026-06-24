@@ -1,6 +1,3 @@
-Here's the updated README:
-
-```markdown
 # Atlas — Adaptive Daily Scheduler
 
 Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability — then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
@@ -357,15 +354,3 @@ All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token
 - **Calendar API integration** — pull commitments directly from Google Calendar instead of manual entry
 - **Weekly and semester views** — plan across multiple days with deadline-aware backscheduling
 - **Optimization algorithm research** — the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
-```
-
-The main changes from your original:
-
-- Added live demo link at the top
-- Updated tech stack to reflect PostgreSQL, JWT auth, and the Anthropic API
-- Updated architecture diagram to include auth, the AI endpoint, and the `users` table
-- Updated project structure (removed `atlas.db`)
-- Added env var instructions to Setup
-- Updated API endpoints table (added auth routes, delete meals/commitments, `/parse-task`)
-- Moved deployment and auth from Phase 3 Planned → Phase 3 Complete, and created a Phase 4 for what's actually next
-- Added NL task parsing to the What It Does list and Current Status
