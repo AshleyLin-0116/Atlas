@@ -1,7 +1,8 @@
+import secrets
 import threading
 import urllib.request
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import bcrypt
@@ -170,6 +171,15 @@ def init_db():
             depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used INTEGER DEFAULT 0
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -322,6 +332,148 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_token(user['id'], user['username'])
     return {"access_token": token, "token_type": "bearer", "username": user['username']}
+
+@app.post("/auth/forgot-password")
+async def forgot_password(body: dict):
+    email = body.get("email", "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, username FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
+    if not user:
+        cur.close()
+        conn.close()
+        return {"message": "If that email exists, a reset link has been sent"}
+    token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    cur.execute(
+        "INSERT INTO password_reset_tokens (user_id, token, expires_at) VALUES (%s, %s, %s)",
+        (user['id'], token, expires_at)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    reset_link = f"https://atlas-delta-sable.vercel.app?reset_token={token}"
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": f"Bearer {os.environ.get('SENDGRID_API_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "personalizations": [{"to": [{"email": email}]}],
+                "from": {"email": os.environ.get("SENDGRID_FROM_EMAIL")},
+                "subject": "Reset your Atlas password",
+                "content": [{
+                    "type": "text/plain",
+                    "value": f"Hi {user['username']},\n\nClick the link below to reset your Atlas password. This link expires in 1 hour.\n\n{reset_link}\n\nIf you didn't request this, you can ignore this email."
+                }]
+            }
+        )
+    return {"message": "If that email exists, a reset link has been sent"}
+
+@app.post("/auth/reset-password")
+def reset_password(body: dict):
+    token = body.get("token", "").strip()
+    new_password = body.get("new_password", "").strip()
+    if not token or not new_password:
+        raise HTTPException(status_code=400, detail="Token and new password are required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM password_reset_tokens WHERE token = %s AND used = 0", (token,))
+    record = cur.fetchone()
+    if not record:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+    expires_at = datetime.fromisoformat(record['expires_at'])
+    if datetime.now(timezone.utc) > expires_at:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=400, detail="Reset link has expired")
+    password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, record['user_id']))
+    cur.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = %s", (token,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Password reset successfully"}
+
+@app.post("/auth/forgot-username")
+async def forgot_username(body: dict):
+    email = body.get("email", "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM users WHERE email = %s", (email,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not user:
+        return {"message": "If that email exists, your username has been sent"}
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": f"Bearer {os.environ.get('SENDGRID_API_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "personalizations": [{"to": [{"email": email}]}],
+                "from": {"email": os.environ.get("SENDGRID_FROM_EMAIL")},
+                "subject": "Your Atlas username",
+                "content": [{
+                    "type": "text/plain",
+                    "value": f"Hi,\n\nYour Atlas username is: {user['username']}\n\nIf you didn't request this, you can ignore this email."
+                }]
+            }
+        )
+    return {"message": "If that email exists, your username has been sent"}
+
+@app.put("/auth/update-account")
+def update_account(body: dict, user_id: int = Depends(get_current_user)):
+    current_password = body.get("current_password", "").strip()
+    new_username = body.get("new_username", "").strip()
+    new_email = body.get("new_email", "").strip()
+    new_password = body.get("new_password", "").strip()
+    if not current_password:
+        raise HTTPException(status_code=400, detail="Current password is required")
+    if not new_username and not new_email and not new_password:
+        raise HTTPException(status_code=400, detail="At least one field to update is required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    if not bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    if new_username:
+        cur.execute("SELECT id FROM users WHERE username = %s AND id != %s", (new_username, user_id))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Username already taken")
+        cur.execute("UPDATE users SET username = %s WHERE id = %s", (new_username, user_id))
+    if new_email:
+        cur.execute("SELECT id FROM users WHERE email = %s AND id != %s", (new_email, user_id))
+        if cur.fetchone():
+            cur.close()
+            conn.close()
+            raise HTTPException(status_code=400, detail="Email already in use")
+        cur.execute("UPDATE users SET email = %s WHERE id = %s", (new_email, user_id))
+    if new_password:
+        password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (password_hash, user_id))
+    conn.commit()
+    cur.close()
+    conn.close()
+    updated_username = new_username if new_username else user['username']
+    return {"message": "Account updated successfully", "username": updated_username}
 
 # ── Tasks ──
 

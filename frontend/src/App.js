@@ -116,6 +116,14 @@ function App() {
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authError, setAuthError] = useState('');
+  const [forgotMode, setForgotMode] = useState(null);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [resetToken, setResetToken] = useState(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetConfirmPassword, setResetConfirmPassword] = useState('');
+  const [resetMessage, setResetMessage] = useState('');
+  const [resetError, setResetError] = useState('');
 
   // ── Core data ──
   const [tasks, setTasks] = useState([]);
@@ -242,6 +250,13 @@ function App() {
   const [customLightKeywords, setCustomLightKeywords] = useState([]);
   const [newKeyword, setNewKeyword] = useState('');
   const [newKeywordType, setNewKeywordType] = useState('deep');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [updateAccountMessage, setUpdateAccountMessage] = useState('');
+  const [updateAccountError, setUpdateAccountError] = useState('');
 
   // ── Schedule ──
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
@@ -343,6 +358,15 @@ function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('reset_token');
+    if (token) {
+      setResetToken(token);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // ─────────────────────────────────────────────────────────────────────────────
   // AUTH
   // ─────────────────────────────────────────────────────────────────────────────
@@ -408,6 +432,51 @@ function App() {
     setTasks([]); setMeals([]); setCommitments([]); setHistory([]);
     setWakeTime(''); setSleepTime(''); setSleepScheduleSaved(false);
     setGeneratedSchedule([]);
+  }
+
+  function handleForgotSubmit() {
+    if (!forgotEmail.trim()) {
+      setForgotMessage('Please enter your email address.');
+      return;
+    }
+    const endpoint = forgotMode === 'password' ? '/auth/forgot-password' : '/auth/forgot-username';
+    fetch(`${process.env.REACT_APP_API_URL}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: forgotEmail.trim() })
+    })
+      .then((res) => res.json())
+      .then((data) => setForgotMessage(data.message))
+      .catch(() => setForgotMessage('Something went wrong — please try again.'));
+  }
+
+  function handleResetPassword() {
+    if (!resetPassword.trim()) {
+      setResetError('Please enter a new password.');
+      return;
+    }
+    if (resetPassword !== resetConfirmPassword) {
+      setResetError('Passwords do not match.');
+      return;
+    }
+    fetch(`${process.env.REACT_APP_API_URL}/auth/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: resetToken, new_password: resetPassword })
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => { throw new Error(d.detail); });
+        }
+        return res.json();
+      })
+      .then(() => {
+        setResetMessage('Password reset successfully — you can now log in.');
+        setResetToken(null);
+        setResetPassword('');
+        setResetConfirmPassword('');
+      })
+      .catch((err) => setResetError(err.message));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1281,6 +1350,47 @@ function App() {
       .catch((err) => console.error('Failed to remove dependency:', err));
   }
 
+  function handleUpdateAccount() {
+    if (!currentPassword.trim()) {
+      setUpdateAccountError('Current password is required.');
+      return;
+    }
+    if (!newUsername.trim() && !newEmail.trim() && !newPassword.trim()) {
+      setUpdateAccountError('Please fill in at least one field to update.');
+      return;
+    }
+    if (newPassword && newPassword !== confirmNewPassword) {
+      setUpdateAccountError('New passwords do not match.');
+      return;
+    }
+    authFetch(`${process.env.REACT_APP_API_URL}/auth/update-account`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_username: newUsername.trim() || null,
+        new_email: newEmail.trim() || null,
+        new_password: newPassword || null
+      })
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => { throw new Error(d.detail); });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        if (data.username && data.username !== username) {
+          setUsername(data.username);
+          localStorage.setItem('atlas_username', data.username);
+        }
+        setUpdateAccountMessage('Account updated successfully.');
+        setUpdateAccountError('');
+        setCurrentPassword(''); setNewUsername(''); setNewEmail('');
+        setNewPassword(''); setConfirmNewPassword('');
+      })
+      .catch((err) => { setUpdateAccountError(err.message); setUpdateAccountMessage(''); });
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // MEAL HANDLERS
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1491,7 +1601,62 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   // AUTH SCREEN
   // ─────────────────────────────────────────────────────────────────────────────
+  if (resetToken) {
+    return (
+      <div>
+        <h1>Atlas</h1>
+        <h2>Reset Your Password</h2>
+        {resetMessage ? (
+          <div>
+            <p style={{ color: 'green' }}>{resetMessage}</p>
+            <button type="button" onClick={() => setResetMessage('')}>Back to Login</button>
+          </div>
+        ) : (
+          <div>
+            {resetError && <p style={{ color: 'red' }}>{resetError}</p>}
+            <div>
+              <label>New Password: </label>
+              <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+            </div>
+            <div>
+              <label>Confirm New Password: </label>
+              <input type="password" value={resetConfirmPassword} onChange={(e) => setResetConfirmPassword(e.target.value)} />
+            </div>
+            <button type="button" onClick={handleResetPassword}>Reset Password</button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   if (!token) {
+    if (forgotMode) {
+      return (
+        <div>
+          <h1>Atlas</h1>
+          <h2>{forgotMode === 'password' ? 'Forgot Password' : 'Forgot Username'}</h2>
+          {forgotMessage ? (
+            <div>
+              <p>{forgotMessage}</p>
+              <button type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to Login</button>
+            </div>
+          ) : (
+            <div>
+              <p>Enter the email address associated with your account.</p>
+              <div>
+                <label>Email: </label>
+                <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} />
+              </div>
+              <button type="button" onClick={handleForgotSubmit}>
+                {forgotMode === 'password' ? 'Send Reset Link' : 'Send Username'}
+              </button>
+              <p><button type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to Login</button></p>
+            </div>
+          )}
+        </div>
+      );
+    }
+
     return (
       <div>
         <h1>Atlas</h1>
@@ -1514,6 +1679,11 @@ function App() {
         {authMode === 'login' ? (
           <div>
             <button type="button" onClick={handleLogin}>Log In</button>
+            <p>
+              <button type="button" onClick={() => { setForgotMode('username'); setAuthError(''); }}>Forgot username?</button>
+              {' · '}
+              <button type="button" onClick={() => { setForgotMode('password'); setAuthError(''); }}>Forgot password?</button>
+            </p>
             <p>Don't have an account? <button type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}>Create one</button></p>
           </div>
         ) : (
@@ -2454,6 +2624,30 @@ function App() {
             </select>
             <button type="button" onClick={() => { setSavedEnergyPattern(energyPattern); saveSetting('energyPattern', energyPattern); }}>Confirm</button>
           </div>
+          <h3>Account</h3>
+          {updateAccountMessage && <p style={{ color: 'green' }}>{updateAccountMessage}</p>}
+          {updateAccountError && <p style={{ color: 'red' }}>{updateAccountError}</p>}
+          <div>
+            <label>Current Password (required): </label>
+            <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} />
+          </div>
+          <div>
+            <label>New Username (optional): </label>
+            <input type="text" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} placeholder="Leave blank to keep current" />
+          </div>
+          <div>
+            <label>New Email (optional): </label>
+            <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="Leave blank to keep current" />
+          </div>
+          <div>
+            <label>New Password (optional): </label>
+            <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Leave blank to keep current" />
+          </div>
+          <div>
+            <label>Confirm New Password: </label>
+            <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} />
+          </div>
+          <button type="button" onClick={handleUpdateAccount}>Save Account Changes</button>
         </section>
       </main>
     </div>
