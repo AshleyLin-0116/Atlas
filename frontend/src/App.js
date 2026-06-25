@@ -869,7 +869,7 @@ function App() {
     }
     const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); const total = h * 60 + m; return total === 0 ? 1440 : total; };
     const toTimeString = (minutes) => { const wrapped = minutes % 1440; const h = Math.floor(wrapped / 60); const m = wrapped % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
-    const todayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][new Date().getDay()];
+    const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
     const effectiveWake = actualWakeTime || wakeTime;
     const effectiveSleep = actualSleepTime || sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
@@ -1736,9 +1736,49 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   // MAIN APP
   // ─────────────────────────────────────────────────────────────────────────────
-  const CATEGORY_OPTIONS = ['Coding', 'Homework', 'Reading', 'Studying', 'Writing', 'Project Work', 'Other'];
-  const COMMITMENT_TYPES = ['Job/Internship', 'Lecture', 'Lab', 'Discussion', 'Club Meeting', 'Sports Practice', 'Volunteer', 'Other'];
-  const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const CATEGORY_OPTIONS = [
+    'Homework', 
+    'Reading', 
+    'Studying / Exam Prep', 
+    'Writing / Essays', 
+    'Projects', 
+    'Group Work', 
+    'Career / Applications', 
+    'Chores / Errands', 
+    'Health / Fitness', 
+    'Social / Clubs', 
+    'Admin (Emails/Forms)', 
+    'Other'
+  ];
+  const COMMITMENT_TYPES = [
+    'Lecture / Class', 
+    'Lab', 
+    'Discussion / Recitation', 
+    'Seminar (upper-level, discussion-heavy)', 
+    'Studio (art, architecture, music practice, design)', 
+    'Office Hours (Professor/TA)', 
+    'Tutoring (receiving tutoring or being a tutor)', 
+    'Study Group Session', 
+    'Job / Internship (paid professional work)', 
+    'Campus Job / Shift (e.g., library, café, desk assistant)', 
+    'Volunteer', 
+    'Club Meeting', 
+    'Sports Practice / Training', 
+    'Ensemble / Band / Choir Rehearsal', 
+    'Theater / Dance Rehearsal', 
+    'Gym / Exercise', 
+    'Therapy / Counseling', 
+    'Other'
+  ];
+  const DAYS = [
+    'Sunday',
+    'Monday', 
+    'Tuesday', 
+    'Wednesday', 
+    'Thursday', 
+    'Friday', 
+    'Saturday', 
+  ];
 
   return (
     <div>
