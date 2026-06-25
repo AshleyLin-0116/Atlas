@@ -162,6 +162,14 @@ def init_db():
             PRIMARY KEY (user_id, key)
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS task_dependencies (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            depends_on_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -323,9 +331,18 @@ def get_tasks(user_id: int = Depends(get_current_user)):
     cur = conn.cursor()
     cur.execute("SELECT * FROM tasks WHERE user_id = %s", (user_id,))
     tasks = cur.fetchall()
+    result = []
+    for task in tasks:
+        normalized = normalize(task)
+        cur.execute(
+            "SELECT depends_on_id FROM task_dependencies WHERE task_id = %s AND user_id = %s",
+            (task['id'], user_id)
+        )
+        normalized['dependencies'] = [row['depends_on_id'] for row in cur.fetchall()]
+        result.append(normalized)
     cur.close()
     conn.close()
-    return [normalize(t) for t in tasks]
+    return result
 
 @app.post("/tasks")
 def add_task(task: Task, user_id: int = Depends(get_current_user)):
@@ -402,6 +419,45 @@ def submit_feedback(task_id: int, feedback: TaskFeedback, user_id: int = Depends
     cur.close()
     conn.close()
     return {"message": "Feedback saved"}
+
+@app.post("/tasks/{task_id}/dependencies")
+def add_dependency(task_id: int, body: dict, user_id: int = Depends(get_current_user)):
+    depends_on_id = body.get("depends_on_id")
+    if not depends_on_id:
+        raise HTTPException(status_code=400, detail="depends_on_id is required")
+    if task_id == depends_on_id:
+        raise HTTPException(status_code=400, detail="A task cannot depend on itself")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM tasks WHERE id = %s AND user_id = %s", (depends_on_id, user_id)
+    )
+    if not cur.fetchone():
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Dependency task not found")
+    cur.execute(
+        """INSERT INTO task_dependencies (user_id, task_id, depends_on_id)
+        VALUES (%s, %s, %s) ON CONFLICT DO NOTHING""",
+        (user_id, task_id, depends_on_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Dependency added"}
+
+@app.delete("/tasks/{task_id}/dependencies/{depends_on_id}")
+def remove_dependency(task_id: int, depends_on_id: int, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM task_dependencies WHERE task_id = %s AND depends_on_id = %s AND user_id = %s",
+        (task_id, depends_on_id, user_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Dependency removed"}
 
 @app.get("/history")
 def get_history(user_id: int = Depends(get_current_user)):

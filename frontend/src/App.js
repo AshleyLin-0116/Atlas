@@ -248,6 +248,10 @@ function App() {
   const [scheduleSummary, setScheduleSummary] = useState([]);
   const [scheduleFeedback, setScheduleFeedback] = useState({});
 
+  // ── Task dependencies ──
+  const [taskDependencies, setTaskDependencies] = useState([]);
+  const [editTaskDependencies, setEditTaskDependencies] = useState([]);
+
   // ── Authenticated fetch ──
   const authFetch = (url, options = {}) => {
     return fetch(url, {
@@ -482,6 +486,16 @@ function App() {
       return `${hours} hour${hours > 1 ? 's' : ''}`;
     }
     return `${hours} hour${hours > 1 ? 's' : ''} ${mins} minutes`;
+  }
+
+  function isBlocked(task) {
+    if (!task.dependencies || task.dependencies.length === 0) {
+      return false;
+    }
+    return task.dependencies.some((depId) => {
+      const dep = tasks.find((t) => t.id === depId);
+      return !dep || !dep.completion_status;
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -957,8 +971,8 @@ function App() {
 
     // Place tasks (deep/light interleaved, priority sorted)
     const sortedTasks = [...tasks].sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
-    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep' && !t.completion_status);
-    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light' && !t.completion_status);
+    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep' && !t.completion_status && !isBlocked(t));
+    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light' && !t.completion_status && !isBlocked(t));
     const orderedTasks = [];
     const maxLen = Math.max(deepTasks.length, lightTasks.length);
     for (let i = 0; i < maxLen; i++) {
@@ -1058,7 +1072,14 @@ function App() {
       summary.push(`${t.taskName}: duration adjusted from ${t.duration} to ${adjusted} min (${diff > 0 ? '+' : ''}${diff} min based on ${sourceLabel})`);
     });
     const scheduledTaskNames = schedule.filter((b) => b.type === 'study' || b.type === 'peak').map((b) => b.label);
-    tasks.filter((t) => !t.completion_status && !scheduledTaskNames.includes(t.taskName)).forEach((t) => {
+    tasks.filter((t) => !t.completion_status && isBlocked(t)).forEach((t) => {
+      const blockingNames = (t.dependencies || [])
+        .map((depId) => tasks.find((d) => d.id === depId))
+        .filter((dep) => dep && !dep.completion_status)
+        .map((dep) => dep.taskName);
+      summary.push(`${t.taskName} is blocked — waiting on: ${blockingNames.join(', ')}`);
+    });
+    tasks.filter((t) => !t.completion_status && !isBlocked(t) && !scheduledTaskNames.includes(t.taskName)).forEach((t) => {
       summary.push(`${t.taskName} could not be fully scheduled — not enough free time today`);
     });
     // Include flagged blocks
@@ -1146,7 +1167,10 @@ function App() {
     })
       .then((res) => res.json())
       .then((savedTask) => {
-        setTasks([...tasks, savedTask]);
+        const newTask = { ...savedTask, dependencies: [] };
+        setTasks([...tasks, newTask]);
+        taskDependencies.forEach((depId) => handleAddDependency(savedTask.id, depId));
+        setTaskDependencies([]);
         setTaskName(''); setDeadline(''); setDifficulty(5); setImportance(5); setUserPreference(5);
         setDuration(''); setAutoTaskType('deep'); setCategory(''); setUserOverrideType(null);
         setWorkOnDueDate(true); setDescription('');
@@ -1215,13 +1239,45 @@ function App() {
       .catch((err) => console.error('Fetch failed:', err));
   }
 
-  function handleStartTask(taskId) { setActiveTaskId(taskId); setTaskStartTime(new Date()); }
+  function handleStartTask(taskId) { 
+    setActiveTaskId(taskId); 
+    setTaskStartTime(new Date()); 
+  }
+
   function handleStopTask() {
     if (!taskStartTime) {
       return;
     }
     setActualDuration(Math.round((new Date() - taskStartTime) / 60000));
     setTaskStartTime(null);
+  }
+
+  function handleAddDependency(taskId, dependsOnId) {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/dependencies`, {
+      method: 'POST',
+      body: JSON.stringify({ depends_on_id: dependsOnId })
+    })
+      .then((res) => res.json())
+      .then(() => {
+        setTasks(tasks.map((t) => t.id === taskId
+          ? { ...t, dependencies: [...(t.dependencies || []), dependsOnId] }
+          : t
+        ));
+      })
+      .catch((err) => console.error('Failed to add dependency:', err));
+  }
+
+  function handleRemoveDependency(taskId, dependsOnId) {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/dependencies/${dependsOnId}`, {
+      method: 'DELETE'
+    })
+      .then(() => {
+        setTasks(tasks.map((t) => t.id === taskId
+          ? { ...t, dependencies: (t.dependencies || []).filter((id) => id !== dependsOnId) }
+          : t
+        ));
+      })
+      .catch((err) => console.error('Failed to remove dependency:', err));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1715,6 +1771,36 @@ function App() {
               <span>{workOnDueDate ? 'Yes' : 'No'}</span>
             </div>
             <div>
+              <label>Depends on (must finish first): </label>
+              <select
+                value=""
+                onChange={(e) => {
+                  const id = Number(e.target.value);
+                  if (id && !taskDependencies.includes(id)) {
+                    setTaskDependencies([...taskDependencies, id]);
+                  }
+                }}
+              >
+                <option value="">Add a dependency...</option>
+                {tasks.filter((t) => !t.completion_status).map((t) => (
+                  <option key={t.id} value={t.id}>{t.taskName}</option>
+                ))}
+              </select>
+              {taskDependencies.length > 0 && (
+                <div>
+                  {taskDependencies.map((depId) => {
+                    const dep = tasks.find((t) => t.id === depId);
+                    return dep ? (
+                      <span key={depId}>
+                        {dep.taskName}
+                        <button type="button" onClick={() => setTaskDependencies(taskDependencies.filter((id) => id !== depId))}>✕</button>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+              )}
+            </div>
+            <div>
               <p>Atlas thinks this is: <strong>{activeTaskType === 'deep' ? 'Deep Work' : 'Light Work'}</strong></p>
               {hasConflict && <p>You changed this to: <strong>{userOverrideType === 'deep' ? 'Deep Work' : 'Light Work'}</strong></p>}
               <button type="button" onClick={() => setUserOverrideType(activeTaskType === 'deep' ? 'light' : 'deep')}>
@@ -1739,6 +1825,42 @@ function App() {
                 {activeTasks.length === 0 ? <p>No active tasks.</p> : activeTasks.map((task) => (
                   <div key={task.id}>
                     <strong>{task.taskName}</strong>
+                    {isBlocked(task) && (
+                      <p>🔒 Blocked by: {(task.dependencies || [])
+                        .map((depId) => tasks.find((t) => t.id === depId))
+                        .filter((dep) => dep && !dep.completion_status)
+                        .map((dep) => dep.taskName)
+                        .join(', ')}
+                      </p>
+                    )}
+                    <div>
+                      <label>Dependencies: </label>
+                      {(task.dependencies || []).length === 0 ? (
+                        <span>None</span>
+                      ) : (
+                        (task.dependencies || []).map((depId) => {
+                          const dep = tasks.find((t) => t.id === depId);
+                          return dep ? (
+                            <span key={depId}>
+                              {dep.taskName} {!dep.completion_status ? '(incomplete)' : '✓'}
+                              <button type="button" onClick={() => handleRemoveDependency(task.id, depId)}>✕</button>
+                            </span>
+                          ) : null;
+                        })
+                      )}
+                      <select
+                        value=""
+                        onChange={(e) => {
+                          const id = Number(e.target.value);
+                          if (id) handleAddDependency(task.id, id);
+                        }}
+                      >
+                        <option value="">Add dependency...</option>
+                        {tasks.filter((t) => t.id !== task.id && !t.completion_status && !(task.dependencies || []).includes(t.id)).map((t) => (
+                          <option key={t.id} value={t.id}>{t.taskName}</option>
+                        ))}
+                      </select>
+                    </div>
                     {task.description && <p>Description: {task.description}</p>}
                     <p>Category: {task.category}</p>
                     <p>Deadline: {task.deadline}</p>
