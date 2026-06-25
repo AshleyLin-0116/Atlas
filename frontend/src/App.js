@@ -2634,7 +2634,7 @@ function App() {
           </div>
           <div>
             <label>Transition Gap (maximum 30 minutes): </label>
-            <input type="number" min="0" max="30" value={transitionGap} onChange={(e) => setTransitionGap(clamp(e.target.value, 5, 30))} />
+            <input type="number" min="0" max="30" value={transitionGap} onChange={(e) => setTransitionGap(clamp(e.target.value, 0, 30))} />
             <button type="button" onClick={() => { setSavedTransitionGap(transitionGap); saveSetting('transitionGap', transitionGap); }}>Confirm</button>
           </div>
           <div>
