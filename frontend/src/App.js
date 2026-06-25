@@ -173,6 +173,7 @@ function App() {
 
   // ── Task feedback ──
   const [feedbackTaskId, setFeedbackTaskId] = useState(null);
+  const [previousDuration, setPreviousDuration] = useState(0);
   const [actualDuration, setActualDuration] = useState('');
   const [actualDifficulty, setActualDifficulty] = useState(5);
   const [completionStatus, setCompletionStatus] = useState('');
@@ -257,6 +258,8 @@ function App() {
   const [confirmNewPassword, setConfirmNewPassword] = useState('');
   const [updateAccountMessage, setUpdateAccountMessage] = useState('');
   const [updateAccountError, setUpdateAccountError] = useState('');
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
+  const [deleteAccountError, setDeleteAccountError] = useState('');
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -268,6 +271,7 @@ function App() {
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
   const [scheduleSummary, setScheduleSummary] = useState([]);
   const [scheduleFeedback, setScheduleFeedback] = useState({});
+  const [flagInput, setFlagInput] = useState({});
 
   // ── Task dependencies ──
   const [taskDependencies, setTaskDependencies] = useState([]);
@@ -664,8 +668,8 @@ function App() {
       return null;
     }
     const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); const total = h * 60 + m; return total === 0 ? 1440 : total; };
-    const effectiveWake = actualWakeTime || wakeTime;
-    const effectiveSleep = actualSleepTime || sleepTime;
+    const effectiveWake = wakeTime;
+    const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
     let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
     if (sleep <= toMinutes(effectiveWake)) {
@@ -870,8 +874,8 @@ function App() {
     const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); const total = h * 60 + m; return total === 0 ? 1440 : total; };
     const toTimeString = (minutes) => { const wrapped = minutes % 1440; const h = Math.floor(wrapped / 60); const m = wrapped % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
     const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
-    const effectiveWake = actualWakeTime || wakeTime;
-    const effectiveSleep = actualSleepTime || sleepTime;
+    const effectiveWake = wakeTime;
+    const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
     let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
     if (sleep <= toMinutes(effectiveWake)) {
@@ -1067,8 +1071,27 @@ function App() {
       const { multiplier } = getTaskMultiplier(task);
       let remaining = Math.round(Number(task.duration) * multiplier);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
-      let currentTime = getNextFreeStart(wake);
       const isOccupiedAt = (s, e) => schedule.some((b) => s < toMinutes(b.end) && e > toMinutes(b.start));
+
+      const findPeakStart = (duration) => {
+        if (!peakHours) {
+          return null;
+        }
+        const peakStart = Math.max(wake, peakHours.start);
+        const peakEnd = Math.min(sleep, peakHours.end);
+        let t = getNextFreeStart(peakStart);
+        while (t + duration <= peakEnd) {
+          if (!isOccupiedAt(t, t + duration)) {
+            return t;
+          }
+          t++;
+        }
+        return null;
+      };
+
+      let currentTime = task.taskType === 'deep'
+        ? (findPeakStart(Math.min(Number(task.duration), savedMaxBlockLength)) ?? getNextFreeStart(wake))
+        : getNextFreeStart(wake);
 
       let safetyCounter = 0;
       while (remaining > 0 && currentTime < sleep) {
@@ -1127,16 +1150,6 @@ function App() {
 
   function generateScheduleSummary(schedule) {
     const summary = [];
-    if (actualWakeTime || actualSleepTime) {
-      const parts = [];
-      if (actualWakeTime) {
-        parts.push(`wake shifted to ${formatTime(actualWakeTime)}`);
-      }
-      if (actualSleepTime) {
-        parts.push(`sleep shifted to ${formatTime(actualSleepTime)}`);
-      }
-      summary.push(`Using actual sleep times — ${parts.join(', ')}`);
-    }
     tasks.forEach((t) => {
       const { multiplier: m, source, key } = getTaskMultiplier(t);
       if (m === 1 || source === 'none') {
@@ -1165,7 +1178,8 @@ function App() {
       }
       const block = schedule[Number(index)];
       if (block) {
-        summary.push(`You flagged "${block.label}" at ${formatTime(block.start)} — consider adjusting your availability settings.`);
+        const note = flagInput[index] ? `"${flagInput[index]}"` : 'no note left';
+        summary.push(`You flagged "${block.label}" at ${formatTime(block.start)} — ${note}`);
       }
     });
     return summary;
@@ -1173,6 +1187,7 @@ function App() {
 
   function handleGenerateSchedule() {
     setScheduleFeedback({});
+    setFlagInput({});
     const schedule = generateSchedule();
     setGeneratedSchedule(schedule);
     setScheduleSummary(generateScheduleSummary(schedule));
@@ -1328,6 +1343,14 @@ function App() {
     setTaskStartTime(null);
   }
 
+  function handleOpenFeedback(taskId) {
+    authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/partial-total`)
+    .then((res) => res.json())
+    .then((data) => setPreviousDuration(data.total || 0))
+    .catch(() => setPreviousDuration(0));
+    setFeedbackTaskId(taskId);
+  }
+
   function handleAddDependency(taskId, dependsOnId) {
     authFetch(`${process.env.REACT_APP_API_URL}/tasks/${taskId}/dependencies`, {
       method: 'POST',
@@ -1395,6 +1418,30 @@ function App() {
         setNewPassword(''); setConfirmNewPassword('');
       })
       .catch((err) => { setUpdateAccountError(err.message); setUpdateAccountMessage(''); });
+  }
+
+  function handleDeleteAccount() {
+    if (!deleteAccountPassword.trim()) {
+        setDeleteAccountError('Please enter your password to confirm deletion.');
+        return;
+    }
+    if (!window.confirm('Are you sure you want to delete your account? This cannot be undone.')) {
+        return;
+    }
+    authFetch(`${process.env.REACT_APP_API_URL}/auth/delete-account`, {
+        method: 'DELETE',
+        body: JSON.stringify({ current_password: deleteAccountPassword })
+    })
+    .then((res) => {
+      if (!res.ok) {
+        return res.json().then((d) => { throw new Error(d.detail); });
+      }
+      return res.json();
+    })
+    .then(() => {
+      handleLogout();
+    })
+    .catch((err) => setDeleteAccountError(err.message));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1565,6 +1612,22 @@ function App() {
     })
       .then(() => setShowSleepFeedback(false))
       .catch((err) => console.error('Failed to log actual sleep:', err));
+  }
+
+  function handleClearActualSleep() {
+    authFetch(`${process.env.REACT_APP_API_URL}/sleep/actual`, { method: 'DELETE' })
+    .then(() => {
+      setActualWakeTime('');
+      setActualSleepTime('');
+    })
+    .catch((err) => console.error('Failed to clear actual sleep:', err));
+  }
+
+  function handleClearActualMeal(mealId) {
+    authFetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}/actual`, { method: 'DELETE' })
+    .then((res) => res.json())
+    .then((saved) => setMeals(meals.map((meal) => meal.id === mealId ? saved : meal)))
+    .catch((err) => console.error('Failed to clear actual meal time:', err));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1879,9 +1942,6 @@ function App() {
           ) : (
             <div>
               <button type="button" onClick={handleGenerateSchedule}>Generate Schedule</button>
-              {(actualWakeTime || actualSleepTime) && (
-                <p>Using actual sleep times: {actualWakeTime ? `woke at ${formatTime(actualWakeTime)}` : ''}{actualWakeTime && actualSleepTime ? ', ' : ''}{actualSleepTime ? `slept at ${formatTime(actualSleepTime)}` : ''}</p>
-              )}
               {scheduleSummary.length > 0 && (
                 <div>
                   <h4>Schedule Notes</h4>
@@ -1893,13 +1953,31 @@ function App() {
               ) : (
                 generatedSchedule.map((block, index) => {
                   const flagButton = (
-                    <button
-                      type="button"
-                      onClick={() => setScheduleFeedback((prev) => ({ ...prev, [index]: prev[index] ? null : 'flagged' }))}
-                      style={{ fontSize: '11px', color: scheduleFeedback[index] ? '#e74c3c' : '#999' }}
-                    >
-                      {scheduleFeedback[index] ? '⚑ Flagged' : '⚐ Flag'}
-                    </button>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setScheduleFeedback((prev) => ({ ...prev, [index]: prev[index] ? null : 'flagged' }));
+                          if (scheduleFeedback[index]) {
+                            setFlagInput((prev) => { const next = { ...prev }; delete next[index]; return next; });
+                          }
+                        }}
+                        style={{ fontSize: '11px', color: scheduleFeedback[index] ? '#e74c3c' : '#999' }}
+                      >
+                        {scheduleFeedback[index] ? '⚑ Flagged' : '⚐ Flag'}
+                      </button>
+                      {scheduleFeedback[index] && (
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="What would you like to change?"
+                            value={flagInput[index] || ''}
+                            onChange={(e) => setFlagInput((prev) => ({ ...prev, [index]: e.target.value }))}
+                            style={{ fontSize: '11px', marginTop: '4px', width: '200px' }}
+                          />
+                        </div>
+                      )}
+                    </div>
                   );
                   const timeLabel = <p>{formatTime(block.start)} — {formatTime(block.end)} ({getBlockDuration(block.start, block.end)})</p>;
                   if (block.type === 'break') {
@@ -2136,6 +2214,9 @@ function App() {
                     {feedbackTaskId === task.id ? (
                       <div>
                         <h4>How did it go?</h4>
+                        {previousDuration > 0 && (
+                          <p>⏱ You've already logged <strong>{previousDuration} minutes</strong> on this task across previous sessions. This session will be added on top.</p>
+                        )}
                         <div>
                           <label>Did you complete this task? </label>
                           <select value={completionStatus} onChange={(e) => setCompletionStatus(e.target.value)}>
@@ -2180,19 +2261,19 @@ function App() {
                           )}
                         </div>
                         <button type="button" onClick={() => handleSubmitFeedback(task.id)}>Submit Feedback</button>
-                        <button type="button" onClick={() => setFeedbackTaskId(null)}>Cancel</button>
+                        <button type="button" onClick={() => { setFeedbackTaskId(null); setPreviousDuration(0); }}>Cancel</button>
                       </div>
                     ) : (
                       <div>
                         {activeTaskId === task.id ? (
                           <div>
                             <p>⏱ Task in progress...</p>
-                            <button type="button" onClick={() => { handleStopTask(); setFeedbackTaskId(task.id); setActiveTaskId(null); }}>Stop Timer</button>
+                            <button type="button" onClick={() => { handleStopTask(); handleOpenFeedback(task.id); setActiveTaskId(null); }}>Stop Timer</button>
                           </div>
                         ) : (
                           <div>
                             <button type="button" onClick={() => handleStartTask(task.id)} disabled={activeTaskId !== null}>Start Task</button>
-                            <button type="button" onClick={() => setFeedbackTaskId(task.id)}>Mark as Done</button>
+                            <button type="button" onClick={() => handleOpenFeedback(task.id)}>Mark as Done</button>
                           </div>
                         )}
                       </div>
@@ -2284,8 +2365,13 @@ function App() {
           {sleepScheduleSaved && (
             <div>
               <p>Sleep schedule saved — wake up at {formatTime(wakeTime)}, sleep at {formatTime(sleepTime)}.</p>
-              {actualWakeTime && <p>Actually woke up at {formatTime(actualWakeTime)}</p>}
-              {actualSleepTime && <p>Actually slept at {formatTime(actualSleepTime)}</p>}
+              {(actualWakeTime || actualSleepTime) && (
+                <div>
+                  {actualWakeTime && <p>Actually woke up at {formatTime(actualWakeTime)}</p>}
+                  {actualSleepTime && <p>Actually slept at {formatTime(actualSleepTime)}</p>}
+                  <button type="button" onClick={handleClearActualSleep}>Clear Actual Sleep Times</button>
+                </div>
+              )}
               {showSleepFeedback ? (
                 <div>
                   <h4>Log Actual Sleep Times</h4>
@@ -2364,7 +2450,12 @@ function App() {
                     <p>Planned: {formatTime(meal.mealStart)} — {formatTime(meal.mealEnd)}</p>
                   )}
                   {meal.commuteTime > 0 && <p>Commute: {meal.commuteTime} minutes</p>}
-                  {meal.actual_start && <p>Actual: {formatTime(meal.actual_start)} — {formatTime(meal.actual_end)}</p>}
+                  {meal.actual_start && (
+                    <div>
+                      <p>Actual: {formatTime(meal.actual_start)} — {formatTime(meal.actual_end)}</p>
+                      <button type="button" onClick={() => handleClearActualMeal(meal.id)}>Clear</button>
+                    </div>
+                  )}
                   {mealFeedbackId === meal.id ? (
                     <div>
                       <h4>What actually happened?</h4>
@@ -2725,6 +2816,14 @@ function App() {
             <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} />
           </div>
           <button type="button" onClick={handleUpdateAccount}>Save Account Changes</button>
+          <h3>Delete Account</h3>
+          <p style={{ color: '#c0392b' }}>This will permanently delete your account and all associated data. This cannot be undone.</p>
+          {deleteAccountError && <p style={{ color: 'red' }}>{deleteAccountError}</p>}
+          <div>
+            <label>Confirm your password: </label>
+            <input type="password" value={deleteAccountPassword} onChange={(e) => setDeleteAccountPassword(e.target.value)} placeholder="Enter your password" />
+          </div>
+          <button type="button" onClick={handleDeleteAccount} style={{ color: 'white', background: '#c0392b' }}>Delete My Account</button>
           <h3>Send Feedback</h3>
           <p>Have a bug to report, a feature you'd like to see, or general thoughts? Let me know!</p>
           {feedbackMessage && <p style={{ color: 'green' }}>{feedbackMessage}</p>}

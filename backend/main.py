@@ -190,6 +190,15 @@ def init_db():
             submitted_at TEXT DEFAULT (now()::text)
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS partial_sessions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+            duration REAL NOT NULL,
+            logged_at TEXT DEFAULT (now()::text)
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -485,6 +494,35 @@ def update_account(body: dict, user_id: int = Depends(get_current_user)):
     updated_username = new_username if new_username else user['username']
     return {"message": "Account updated successfully", "username": updated_username}
 
+@app.delete("/auth/delete-account")
+def delete_account(body: dict, user_id: int = Depends(get_current_user)):
+    current_password = body.get("current_password", "").strip()
+    if not current_password:
+        raise HTTPException(status_code=400, detail="Password is required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    if not bcrypt.checkpw(current_password.encode('utf-8'), user['password_hash'].encode('utf-8')):
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=401, detail="Incorrect password")
+    cur.execute("DELETE FROM partial_sessions WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM task_dependencies WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM task_history WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM tasks WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM meals WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM commitments WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM sleep_schedule WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM settings WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM feedback WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM password_reset_tokens WHERE user_id = %s", (user_id,))
+    cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Account deleted"}
+
 # ── Tasks ──
 
 @app.get("/tasks")
@@ -560,13 +598,39 @@ def submit_feedback(task_id: int, feedback: TaskFeedback, user_id: int = Depends
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        """UPDATE tasks
-        SET actual_duration = %s, actual_difficulty = %s, completion_status = %s
-        WHERE id = %s AND user_id = %s RETURNING *""",
-        (feedback.actual_duration, feedback.actual_difficulty, feedback.completion_status, task_id, user_id)
+        "SELECT * FROM tasks WHERE id = %s AND user_id = %s",
+        (task_id, user_id)
     )
     task = cur.fetchone()
-    if task:
+    if not task:
+        cur.close()
+        conn.close()
+        raise HTTPException(status_code=404, detail="Task not found")
+    cur.execute(
+        "SELECT COALESCE(SUM(duration), 0) FROM partial_sessions WHERE task_id = %s AND user_id = %s",
+        (task_id, user_id)
+    )
+    previous_total = cur.fetchone()['coalesce']
+    if feedback.completion_status == 'Partially Completed':
+        cur.execute(
+            "INSERT INTO partial_sessions (user_id, task_id, duration) VALUES (%s, %s, %s)",
+            (user_id, task_id, feedback.actual_duration)
+        )
+        cumulative = previous_total + feedback.actual_duration
+        cur.execute(
+            """UPDATE tasks
+            SET actual_duration = %s, actual_difficulty = %s, completion_status = %s
+            WHERE id = %s AND user_id = %s""",
+            (cumulative, feedback.actual_difficulty, feedback.completion_status, task_id, user_id)
+        )
+    else:
+        cumulative = previous_total + feedback.actual_duration
+        cur.execute(
+            """UPDATE tasks
+            SET actual_duration = %s, actual_difficulty = %s, completion_status = %s
+            WHERE id = %s AND user_id = %s""",
+            (cumulative, feedback.actual_difficulty, feedback.completion_status, task_id, user_id)
+        )
         cur.execute(
             """INSERT INTO task_history
             (user_id, task_id, taskName, category, estimated_duration, actual_duration,
@@ -574,13 +638,30 @@ def submit_feedback(task_id: int, feedback: TaskFeedback, user_id: int = Depends
             start_time, end_time, completed_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now()::text)""",
             (user_id, task_id, task['taskname'], task['category'], task['duration'],
-            feedback.actual_duration, task['difficulty'], feedback.actual_difficulty,
+            cumulative, task['difficulty'], feedback.actual_difficulty,
             feedback.completion_status, feedback.start_time, feedback.end_time)
+        )
+        cur.execute(
+            "DELETE FROM partial_sessions WHERE task_id = %s AND user_id = %s",
+            (task_id, user_id)
         )
     conn.commit()
     cur.close()
     conn.close()
-    return {"message": "Feedback saved"}
+    return {"message": "Feedback saved", "cumulative_duration": cumulative}
+
+@app.get("/tasks/{task_id}/partial-total")
+def get_partial_total(task_id: int, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT COALESCE(SUM(duration), 0) AS total FROM partial_sessions WHERE task_id = %s AND user_id = %s",
+        (task_id, user_id)
+    )
+    result = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {"total": result['total']}
 
 @app.post("/tasks/{task_id}/dependencies")
 def add_dependency(task_id: int, body: dict, user_id: int = Depends(get_current_user)):
@@ -687,6 +768,20 @@ def log_actual_meal(meal_id: int, data: ActualMealTime, user_id: int = Depends(g
     cur.execute(
         "UPDATE meals SET actual_start = %s, actual_end = %s WHERE id = %s AND user_id = %s RETURNING *",
         (data.actual_start, data.actual_end, meal_id, user_id)
+    )
+    result = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    return normalize(result)
+
+@app.delete("/meals/{meal_id}/actual")
+def clear_actual_meal(meal_id: int, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE meals SET actual_start = NULL, actual_end = NULL WHERE id = %s AND user_id = %s RETURNING *",
+        (meal_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()
@@ -811,6 +906,22 @@ def log_actual_sleep(data: ActualSleepTime, user_id: int = Depends(get_current_u
     cur.close()
     conn.close()
     return {"message": "Actual sleep logged"}
+
+@app.delete("/sleep/actual")
+def clear_actual_sleep(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """UPDATE sleep_schedule SET actual_wake = NULL, actual_sleep = NULL
+        WHERE user_id = %s AND id = (
+            SELECT id FROM sleep_schedule WHERE user_id = %s ORDER BY id DESC LIMIT 1
+        )""",
+        (user_id, user_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Actual sleep times cleared"}
 
 # ── Settings ──
 
