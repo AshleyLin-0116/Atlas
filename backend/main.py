@@ -180,6 +180,16 @@ def init_db():
             used INTEGER DEFAULT 0
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            username TEXT NOT NULL,
+            category TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            submitted_at TEXT DEFAULT (now()::text)
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -872,3 +882,41 @@ Task: \"{request['text']}\""""
             return json.loads(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse task: {str(e)}")
+    
+# ── Feedback ──
+
+@app.post("/feedback")
+async def submit_feedback_form(body: dict, user_id: int = Depends(get_current_user)):
+    category = body.get("category", "").strip()
+    comment = body.get("comment", "").strip()
+    if not category or not comment:
+        raise HTTPException(status_code=400, detail="Category and comment are required")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    cur.execute(
+        "INSERT INTO feedback (user_id, username, category, comment) VALUES (%s, %s, %s, %s)",
+        (user_id, user['username'], category, comment)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    async with httpx.AsyncClient() as client:
+        await client.post(
+            "https://api.sendgrid.com/v3/mail/send",
+            headers={
+                "Authorization": f"Bearer {os.environ.get('SENDGRID_API_KEY')}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "personalizations": [{"to": [{"email": os.environ.get("SENDGRID_FROM_EMAIL")}]}],
+                "from": {"email": os.environ.get("SENDGRID_FROM_EMAIL")},
+                "subject": f"Atlas Feedback — {category}",
+                "content": [{
+                    "type": "text/plain",
+                    "value": f"New feedback from {user['username']}:\n\nCategory: {category}\n\nComment:\n{comment}"
+                }]
+            }
+        )
+    return {"message": "Feedback submitted — thank you!"}

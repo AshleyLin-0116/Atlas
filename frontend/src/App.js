@@ -258,6 +258,12 @@ function App() {
   const [updateAccountMessage, setUpdateAccountMessage] = useState('');
   const [updateAccountError, setUpdateAccountError] = useState('');
 
+  // ── Feedback form ──
+  const [feedbackCategory, setFeedbackCategory] = useState('');
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackError, setFeedbackError] = useState('');
+
   // ── Schedule ──
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
   const [scheduleSummary, setScheduleSummary] = useState([]);
@@ -1593,6 +1599,37 @@ function App() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // FEEDBACK HANDLERS
+  // ─────────────────────────────────────────────────────────────────────────────
+  function handleSubmitFeedbackForm() {
+    if (!feedbackCategory) {
+      setFeedbackError('Please select a category.');
+      return;
+    }
+    if (!feedbackComment.trim()) {
+      setFeedbackError('Please enter a comment.');
+      return;
+    }
+    authFetch(`${process.env.REACT_APP_API_URL}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ category: feedbackCategory, comment: feedbackComment.trim() })
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((d) => { throw new Error(d.detail); });
+        }
+        return res.json();
+      })
+      .then((data) => {
+        setFeedbackMessage(data.message);
+        setFeedbackError('');
+        setFeedbackCategory('');
+        setFeedbackComment('');
+      })
+      .catch((err) => { setFeedbackError(err.message); setFeedbackMessage(''); });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // DERIVED STATE
   // ─────────────────────────────────────────────────────────────────────────────
   const activeTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
@@ -2648,6 +2685,29 @@ function App() {
             <input type="password" value={confirmNewPassword} onChange={(e) => setConfirmNewPassword(e.target.value)} />
           </div>
           <button type="button" onClick={handleUpdateAccount}>Save Account Changes</button>
+          <h3>Send Feedback</h3>
+          <p>Have a bug to report, a feature you'd like to see, or general thoughts? Let me know!</p>
+          {feedbackMessage && <p style={{ color: 'green' }}>{feedbackMessage}</p>}
+          {feedbackError && <p style={{ color: 'red' }}>{feedbackError}</p>}
+          <div>
+            <label>Category: </label>
+            <select value={feedbackCategory} onChange={(e) => setFeedbackCategory(e.target.value)}>
+              <option value="">Select...</option>
+              <option value="Bug Report">Bug Report</option>
+              <option value="Feature Request">Feature Request</option>
+              <option value="General">General</option>
+            </select>
+          </div>
+          <div>
+            <label>Comment: </label>
+            <textarea
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              placeholder="Describe the bug, feature, or share your thoughts..."
+              rows="4"
+            />
+          </div>
+          <button type="button" onClick={handleSubmitFeedbackForm}>Submit Feedback</button>
         </section>
       </main>
     </div>
