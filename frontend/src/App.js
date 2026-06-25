@@ -835,7 +835,7 @@ function App() {
       suggestions.push(`Your best work happens during ${best.period} (${best.rate}% completion rate) — try scheduling deep work then.`);
     }
     const dueTodayOrTomorrow = tasks.filter((t) => {
-      if (t.completion_status) {
+      if (t.completion_status === 'Completed') {
         return false;
       }
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -844,7 +844,7 @@ function App() {
       return dl <= tomorrow;
     });
     const overdueTasks = tasks.filter((t) => {
-      if (t.completion_status) {
+      if (t.completion_status === 'Completed') {
         return false;
       }
       const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1047,8 +1047,8 @@ function App() {
 
     // Place tasks (deep/light interleaved, priority sorted)
     const sortedTasks = [...tasks].sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
-    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep' && !t.completion_status && !isBlocked(t));
-    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light' && !t.completion_status && !isBlocked(t));
+    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep' && t.completion_status !== 'Completed' && !isBlocked(t));
+    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light' && t.completion_status !== 'Completed' && !isBlocked(t));
     const orderedTasks = [];
     const maxLen = Math.max(deepTasks.length, lightTasks.length);
     for (let i = 0; i < maxLen; i++) {
@@ -1148,14 +1148,14 @@ function App() {
       summary.push(`${t.taskName}: duration adjusted from ${t.duration} to ${adjusted} min (${diff > 0 ? '+' : ''}${diff} min based on ${sourceLabel})`);
     });
     const scheduledTaskNames = schedule.filter((b) => b.type === 'study' || b.type === 'peak').map((b) => b.label);
-    tasks.filter((t) => !t.completion_status && isBlocked(t)).forEach((t) => {
+    tasks.filter((t) => !t.completion_status && !isBlocked(t) && !scheduledTaskNames.includes(t.taskName)).forEach((t) => {
       const blockingNames = (t.dependencies || [])
         .map((depId) => tasks.find((d) => d.id === depId))
         .filter((dep) => dep && !dep.completion_status)
         .map((dep) => dep.taskName);
       summary.push(`${t.taskName} is blocked — waiting on: ${blockingNames.join(', ')}`);
     });
-    tasks.filter((t) => !t.completion_status && !isBlocked(t) && !scheduledTaskNames.includes(t.taskName)).forEach((t) => {
+    tasks.filter((t) => t.completion_status !== 'Completed' && !isBlocked(t) && !scheduledTaskNames.includes(t.taskName)).forEach((t) => {
       summary.push(`${t.taskName} could not be fully scheduled — not enough free time today`);
     });
     // Include flagged blocks
@@ -1765,7 +1765,7 @@ function App() {
           {/* Overdue warning */}
           {(() => {
             const overdueTasks = tasks.filter((t) => {
-              if (t.completion_status) {
+              if (t.completion_status === 'Completed') {
                 return false;
               }
               const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1834,7 +1834,7 @@ function App() {
           <h2>Schedule</h2>
           {!wakeTime || !sleepTime ? (
             <p>Set your wake and sleep times in Availability to generate a schedule.</p>
-          ) : tasks.filter((t) => !t.completion_status).length === 0 ? (
+          ) : tasks.filter((t) => t.completion_status !== 'Completed').length === 0 ? (
             <p>Add tasks to generate a schedule.</p>
           ) : (
             <div>
@@ -2025,8 +2025,8 @@ function App() {
           {/* Task list */}
           <h3>Task List</h3>
           {(() => {
-            const activeTasks = [...tasks].filter((t) => !t.completion_status).sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
-            const completedTasks = [...tasks].filter((t) => t.completion_status).sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
+            const activeTasks = [...tasks].filter((t) => t.completion_status !== 'Completed').sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
+            const completedTasks = [...tasks].filter((t) => t.completion_status === 'Completed').sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
 
             return (
               <div>
