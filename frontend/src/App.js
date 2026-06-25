@@ -250,6 +250,7 @@ function App() {
 
   // ── Task dependencies ──
   const [taskDependencies, setTaskDependencies] = useState([]);
+  // eslint-disable-next-line no-unused-vars
   const [editTaskDependencies, setEditTaskDependencies] = useState([]);
 
   // ── Authenticated fetch ──
