@@ -3,6 +3,8 @@ import logo from './Atlas_Logo.png';
 import './App.css';
 import { useTheme, getCategoryFromName, getEmojiForCategory } from './ThemeContext';
 
+/* eslint-disable no-unused-vars */
+
 // ─── TimePicker ───────────────────────────────────────────────────────────────
 function TimePicker({ value, onChange, clockFormat }) {
   const hours24 = Array.from({ length: 24 }, (_, i) => i);
