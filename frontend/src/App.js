@@ -1919,50 +1919,6 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   // MAIN APP
   // ─────────────────────────────────────────────────────────────────────────────
-  const CATEGORY_OPTIONS = [
-    'Homework', 
-    'Reading', 
-    'Studying / Exam Prep', 
-    'Writing / Essays', 
-    'Projects', 
-    'Group Work', 
-    'Career / Applications', 
-    'Chores / Errands', 
-    'Health / Fitness', 
-    'Social / Clubs', 
-    'Admin (Emails/Forms)', 
-    'Other'
-  ];
-  const COMMITMENT_TYPES = [
-    'Lecture / Class', 
-    'Lab', 
-    'Discussion / Recitation', 
-    'Seminar (upper-level, discussion-heavy)', 
-    'Studio (art, architecture, music practice, design)', 
-    'Office Hours (Professor/TA)', 
-    'Tutoring (receiving tutoring or being a tutor)', 
-    'Study Group Session', 
-    'Job / Internship (paid professional work)', 
-    'Campus Job / Shift (e.g., library, café, desk assistant)', 
-    'Volunteer', 
-    'Club Meeting', 
-    'Sports Practice / Training', 
-    'Ensemble / Band / Choir Rehearsal', 
-    'Theater / Dance Rehearsal', 
-    'Gym / Exercise', 
-    'Therapy / Counseling', 
-    'Other'
-  ];
-  const DAYS = [
-    'Sunday',
-    'Monday', 
-    'Tuesday', 
-    'Wednesday', 
-    'Thursday', 
-    'Friday', 
-    'Saturday', 
-  ];
-
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const CATEGORY_OPTIONS = [
     'Homework', 'Reading', 
