@@ -2,8 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-width: 480px;
-  margin: 0 auto;
+  width: 100%;
   background-color: var(--bg-app);
   position: relative;
   overflow: hidden;
@@ -194,7 +193,7 @@
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 10px;
+  padding: 0 16px;
 }
 
 /* ─── Week Grid ───────────────────────────────────────────────────────────── */
@@ -692,4 +691,24 @@
   height: 1px;
   background: var(--border-color);
   margin: 16px 0;
+}
+
+/* ─── TimePicker ──────────────────────────────────────────────────────────── */
+
+.time-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.time-picker select {
+  width: auto;
+}
+
+.time-picker-colon {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+  padding-bottom: 1px;
 }

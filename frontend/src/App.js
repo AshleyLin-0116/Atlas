@@ -43,13 +43,13 @@ function TimePicker({ value, onChange, clockFormat }) {
   }
 
   return (
-    <span>
+    <span className="time-picker">
       <select value={currentHour} onChange={handleHourChange}>
         {hours24.map((h) => (
           <option key={h} value={h}>{displayHour(h)}</option>
         ))}
       </select>
-      :
+      <span className="time-picker-colon">:</span>
       <select value={currentMinute} onChange={handleMinuteChange}>
         {minutes.map((m) => (
           <option key={m} value={m}>{m}</option>
@@ -505,11 +505,11 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   function getWeekDays() {
     const today = new Date();
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const sunday = new Date(today);
+    sunday.setDate(today.getDate() - today.getDay());
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+      const d = new Date(sunday);
+      d.setDate(sunday.getDate() + i);
       return d;
     });
   }
@@ -1040,9 +1040,19 @@ function App() {
     if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
       blockedRanges.push({ start: wake, end: wake + savedShowerDuration, label: 'Shower', type: 'shower' });
     }
-    if (savedShowerPreference === 'evening' || savedShowerPreference === 'both') {
-      const eveningShowerStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
-      blockedRanges.push({ start: eveningShowerStart, end: eveningShowerStart + savedShowerDuration, label: 'Shower', type: 'shower' });
+    if (['evening_early', 'evening_mid', 'evening_late', 'both', 'after_gym'].includes(savedShowerPreference)) {
+      let eveningWindowStart;
+      if (savedShowerPreference === 'after_gym') {
+        const gymBlock = blockedRanges.find((b) => b.label && b.label.toLowerCase().includes('gym'));
+        eveningWindowStart = gymBlock ? gymBlock.end : 18 * 60;
+      } else if (savedShowerPreference === 'evening_early') {
+        eveningWindowStart = 17 * 60;
+      } else if (savedShowerPreference === 'evening_mid') {
+        eveningWindowStart = 19 * 60;
+      } else {
+        eveningWindowStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
+      }
+      blockedRanges.push({ start: eveningWindowStart, end: eveningWindowStart + savedShowerDuration, label: 'Shower', type: 'shower' });
     }
     blockedRanges.sort((a, b) => a.start - b.start);
 
@@ -2036,28 +2046,18 @@ function App() {
           {authMode === 'login' ? (
             <>
               <button className="btn-primary" type="button" onClick={handleLogin} style={{ marginTop: 8 }}>Log in</button>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: 16, marginTop: 4 }}>
-                <button type="button" onClick={() => { setForgotMode('username'); setAuthError(''); }}
-                  style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'none', border: 'none' }}>Forgot username?</button>
-                <button type="button" onClick={() => { setForgotMode('password'); setAuthError(''); }}
-                  style={{ fontSize: 12, color: 'var(--text-secondary)', background: 'none', border: 'none' }}>Forgot password?</button>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                <button className="btn-secondary" type="button" onClick={() => { setForgotMode('username'); setAuthError(''); }}>Forgot username?</button>
+                <button className="btn-secondary" type="button" onClick={() => { setForgotMode('password'); setAuthError(''); }}>Forgot password?</button>
               </div>
               <div className="divider" />
-              <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
-                No account?{' '}
-                <button type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}
-                  style={{ color: 'var(--brand)', fontWeight: 700, background: 'none', border: 'none', fontSize: 13 }}>Sign up</button>
-              </p>
+              <button className="btn-secondary" type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}>Create an account</button>
             </>
           ) : (
             <>
               <button className="btn-primary" type="button" onClick={handleRegister} style={{ marginTop: 8 }}>Create account</button>
               <div className="divider" />
-              <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-secondary)' }}>
-                Already have an account?{' '}
-                <button type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }}
-                  style={{ color: 'var(--brand)', fontWeight: 700, background: 'none', border: 'none', fontSize: 13 }}>Log in</button>
-              </p>
+              <button className="btn-secondary" type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }}>Already have an account? Log in</button>
             </>
           )}
         </div>
@@ -2585,7 +2585,8 @@ function App() {
                 <FlexPreferenceSelect value={mealFlexPreference} onChange={setMealFlexPreference} />
               </>
             )}
-            <input type="number" min="0" max="120" value={mealCommuteTime} onChange={(e) => setMealCommuteTime(Number(e.target.value))} placeholder="Commute time (min, optional)" />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute time (min, optional)</label>
+            <input type="number" min="0" max="120" value={mealCommuteTime} onChange={(e) => setMealCommuteTime(Number(e.target.value))} />
             <button className="btn-primary" type="button" onClick={handleAddMeal}>Add meal</button>
           </div>
           {meals.map((meal) => (
@@ -2668,7 +2669,8 @@ function App() {
                 </button>
               ))}
             </div>
-            <input type="number" min="0" max="120" value={commuteTime} onChange={(e) => setCommuteTime(Number(e.target.value))} placeholder="Commute time (min, optional)" />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute time (min, optional)</label>
+            <input type="number" min="0" max="120" value={commuteTime} onChange={(e) => setCommuteTime(Number(e.target.value))} />
             <button className="btn-primary" type="button" onClick={handleAddCommitment}>Add commitment</button>
           </div>
           {commitments.map((commitment) => (
@@ -2695,10 +2697,11 @@ function App() {
                       <FlexPreferenceSelect value={editCommitmentFlexPreference} onChange={setEditCommitmentFlexPreference} />
                     </>
                   )}
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Repeat on days (optional)</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {DAYS.map((day) => (
                       <button key={day} type="button"
-                        onClick={() => toggleDay(day, editCommitmentDays, setEditCommitmentDays)}
+                        onClick={() => toggleDay(day, commitmentDays, setCommitmentDays)}
                         style={{
                           padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
                           background: editCommitmentDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
@@ -2857,10 +2860,14 @@ function App() {
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Shower duration (min): {showerDuration}</label>
             <input type="number" min="0" max="60" value={showerDuration} onChange={(e) => setShowerDuration(clamp(e.target.value, 0, 60))} />
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Shower time preference</label>
             <select value={showerPreference} onChange={(e) => setShowerPreference(e.target.value)}>
-              <option value="morning">Morning</option>
-              <option value="evening">Evening</option>
-              <option value="both">Both</option>
+              <option value="morning">Morning (after wake-up)</option>
+              <option value="after_gym">After gym (follows gym/exercise block)</option>
+              <option value="evening_early">Early evening (5pm-7pm)</option>
+              <option value="evening_mid">Mid evening (7pm-9pm)</option>
+              <option value="evening_late">Late evening (9pm-before bed)</option>
+              <option value="both">Both morning & evening</option>
             </select>
             <button className="btn-primary" type="button" onClick={() => { setSavedShowerDuration(showerDuration); setSavedShowerPreference(showerPreference); saveSetting('showerDuration', showerDuration); saveSetting('showerPreference', showerPreference); }}>Save shower settings</button>
 
