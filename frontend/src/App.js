@@ -2719,7 +2719,7 @@ function App() {
                     )}
                     <button className="btn-secondary" type="button" onClick={() => handleOpenFeedback(task.id)} style={{ flex: 1 }}>Done</button>
                     <button className="btn-secondary" type="button" onClick={() => handleEditTask(task)} style={{ flex: 1 }}>Edit</button>
-                    <button className="btn-danger" type="button" onClick={() => handleDeleteTask(task.id)} style={{ flex: 1 }}>Del</button>
+                    <button className="btn-danger" type="button" onClick={() => handleDeleteTask(task.id)} style={{ flex: 1 }}>Delete</button>
                   </div>
                 )}
               </div>
