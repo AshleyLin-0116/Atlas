@@ -228,6 +228,8 @@ function App() {
   const [commitmentFlexDuration, setCommitmentFlexDuration] = useState(60);
   const [commitmentFlexPreference, setCommitmentFlexPreference] = useState('any');
   const [commitmentDays, setCommitmentDays] = useState([]);
+  const [commitmentScheduleType, setCommitmentScheduleType] = useState('recurring');
+  const [commitmentSpecificDate, setCommitmentSpecificDate] = useState('');
 
   // ── Commitment editing ──
   const [editingCommitmentId, setEditingCommitmentId] = useState(null);
@@ -240,6 +242,8 @@ function App() {
   const [editCommitmentFlexDuration, setEditCommitmentFlexDuration] = useState(60);
   const [editCommitmentFlexPreference, setEditCommitmentFlexPreference] = useState('any');
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
+  const [editCommitmentScheduleType, setEditCommitmentScheduleType] = useState('recurring');
+  const [editCommitmentSpecificDate, setEditCommitmentSpecificDate] = useState('');
 
   // ── Settings ──
   const [clockFormat, setClockFormat] = useState('12');
@@ -271,6 +275,8 @@ function App() {
   const [updateAccountError, setUpdateAccountError] = useState('');
   const [deleteAccountPassword, setDeleteAccountPassword] = useState('');
   const [deleteAccountError, setDeleteAccountError] = useState('');
+  const [fontSize, setFontSize] = useState('medium');
+  const [savedFontSize, setSavedFontSize] = useState('medium');
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -374,10 +380,19 @@ function App() {
           setSavedEnergyPattern(data.energyPattern); 
           setEnergyPattern(data.energyPattern); 
         }
+        if (data.fontSize) {
+          setSavedFontSize(data.fontSize);
+          setFontSize(data.fontSize);
+        }
       })
       .catch((err) => console.error('Failed to load settings:', err));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+  
+  useEffect(() => {
+    const sizeMap = { small: '13px', medium: '16px', large: '19px' };
+    document.documentElement.style.setProperty('--font-size-base', sizeMap[savedFontSize] || '16px');
+  }, [savedFontSize]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -566,9 +581,18 @@ function App() {
     });
     commitments.forEach((commitment) => {
       if (commitment.commitmentStart && commitment.commitmentEnd) {
-        const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
-        if (days.length === 0 || days.includes(dayName)) {
-          blocks.push({
+        if (commitment.specificDate) {
+          const commitDate = new Date(commitment.specificDate + 'T00:00:00');
+          if (!isSameDay(commitDate, date)) { 
+            return; 
+          }
+        } else {
+          const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
+          if (days.length > 0 && !days.includes(dayName)) { 
+            return; 
+          }
+        }
+        blocks.push({
             label: commitment.commitmentName,
             start: commitment.commitmentStart,
             end: commitment.commitmentEnd,
@@ -1060,10 +1084,16 @@ function App() {
         if (commitment.timeMode === 'flexible' || !commitment.commitmentStart || !commitment.commitmentEnd) {
           return [];
         }
-        if (commitment.days && commitment.days.length > 0) {
+        if (commitment.specificDate) {
+          const commitDate = new Date(commitment.specificDate + 'T00:00:00');
+          const today = new Date();
+          if (commitDate.toDateString() !== today.toDateString()) { 
+            return []; 
+          }
+        } else if (commitment.days && commitment.days.length > 0) {
           const dayList = commitment.days.split(',').filter(Boolean);
-          if (!dayList.includes(todayName)) {
-            return [];
+          if (!dayList.includes(todayName)) { 
+            return []; 
           }
         }
         const blocks = [{ start: toMinutes(commitment.commitmentStart), end: toMinutes(commitment.commitmentEnd), label: commitment.commitmentName, type: 'commitment' }];
@@ -1738,7 +1768,7 @@ function App() {
     }
     authFetch(`${process.env.REACT_APP_API_URL}/commitments`, {
       method: 'POST',
-      body: JSON.stringify({ commitmentName: commitmentName.trim(), commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null, commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null, commitmentType, commuteTime, timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference, days: commitmentDays.join(',') })
+      body: JSON.stringify({ commitmentName: commitmentName.trim(), commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null, commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null, commitmentType, commuteTime, timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference, days: commitmentScheduleType === 'recurring' ? commitmentDays.join(',') : '', specificDate: commitmentScheduleType === 'specific' ? commitmentSpecificDate : null })
     })
       .then((res) => res.json())
       .then((savedCommitment) => {
@@ -1746,6 +1776,7 @@ function App() {
         setCommitmentName(''); setCommitmentStart(''); setCommitmentEnd(''); setCommitmentType('');
         setCommuteTime(0); setCommitmentTimeMode('fixed'); setCommitmentFlexDuration(60);
         setCommitmentFlexPreference('any'); setCommitmentDays([]);
+        setCommitmentScheduleType('recurring'); setCommitmentSpecificDate('');
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -1763,12 +1794,14 @@ function App() {
     setEditCommitmentTimeMode(commitment.timeMode || 'fixed'); setEditCommitmentFlexDuration(commitment.flexDuration || 60);
     setEditCommitmentFlexPreference(commitment.flexPreference || 'any');
     setEditCommitmentDays(commitment.days ? commitment.days.split(',').filter(Boolean) : []);
+    setEditCommitmentScheduleType(commitment.specificDate ? 'specific' : 'recurring');
+    setEditCommitmentSpecificDate(commitment.specificDate || '');
   }
 
   function handleUpdateCommitment(commitmentId) {
     authFetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
       method: 'PUT',
-      body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentDays.join(',') })
+      body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentScheduleType === 'recurring' ? editCommitmentDays.join(',') : '', specificDate: editCommitmentScheduleType === 'specific' ? editCommitmentSpecificDate : null })
     })
       .then((res) => res.json())
       .then((saved) => { 
@@ -2845,20 +2878,42 @@ function App() {
                 <FlexPreferenceSelect value={commitmentFlexPreference} onChange={setCommitmentFlexPreference} />
               </>
             )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {DAYS.map((day) => (
-                <button key={day} type="button"
-                  onClick={() => toggleDay(day, commitmentDays, setCommitmentDays)}
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Schedule type</label>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['recurring', 'specific'].map((type) => (
+                <button key={type} type="button"
+                  onClick={() => setCommitmentScheduleType(type)}
                   style={{
-                    padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
-                    background: commitmentDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
-                    color: commitmentDays.includes(day) ? 'white' : 'var(--text-secondary)',
-                    border: '1.5px solid var(--border-color)',
+                    flex: 1, padding: '8px 0', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                    background: commitmentScheduleType === type ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                    color: commitmentScheduleType === type ? 'white' : 'var(--text-secondary)',
+                    border: `1.5px solid ${commitmentScheduleType === type ? 'var(--brand)' : 'var(--border-color)'}`,
                   }}>
-                  {day.slice(0, 3)}
+                  {type === 'recurring' ? 'Recurring (days)' : 'Specific date'}
                 </button>
               ))}
             </div>
+            {commitmentScheduleType === 'recurring' ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {DAYS.map((day) => (
+                  <button key={day} type="button"
+                    onClick={() => toggleDay(day, commitmentDays, setCommitmentDays)}
+                    style={{
+                      padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                      background: commitmentDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                      color: commitmentDays.includes(day) ? 'white' : 'var(--text-secondary)',
+                      border: '1.5px solid var(--border-color)',
+                    }}>
+                    {day.slice(0, 3)}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <>
+                <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Date</label>
+                <input type="date" value={commitmentSpecificDate} onChange={(e) => setCommitmentSpecificDate(e.target.value)} />
+              </>
+            )}
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute time (min, optional)</label>
             <input type="number" min="0" max="120" value={commuteTime} onChange={(e) => setCommuteTime(Number(e.target.value))} />
             <button className="btn-primary" type="button" onClick={handleAddCommitment}>Add commitment</button>
@@ -2887,21 +2942,42 @@ function App() {
                       <FlexPreferenceSelect value={editCommitmentFlexPreference} onChange={setEditCommitmentFlexPreference} />
                     </>
                   )}
-                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Repeat on days (optional)</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {DAYS.map((day) => (
-                      <button key={day} type="button"
-                        onClick={() => toggleDay(day, commitmentDays, setCommitmentDays)}
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Schedule type</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {['recurring', 'specific'].map((type) => (
+                      <button key={type} type="button"
+                        onClick={() => setEditCommitmentScheduleType(type)}
                         style={{
-                          padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
-                          background: editCommitmentDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
-                          color: editCommitmentDays.includes(day) ? 'white' : 'var(--text-secondary)',
-                          border: '1.5px solid var(--border-color)',
+                          flex: 1, padding: '8px 0', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                          background: editCommitmentScheduleType === type ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                          color: editCommitmentScheduleType === type ? 'white' : 'var(--text-secondary)',
+                          border: `1.5px solid ${editCommitmentScheduleType === type ? 'var(--brand)' : 'var(--border-color)'}`,
                         }}>
-                        {day.slice(0, 3)}
+                        {type === 'recurring' ? 'Recurring (days)' : 'Specific date'}
                       </button>
                     ))}
                   </div>
+                  {editCommitmentScheduleType === 'recurring' ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {DAYS.map((day) => (
+                        <button key={day} type="button"
+                          onClick={() => toggleDay(day, editCommitmentDays, setEditCommitmentDays)}
+                          style={{
+                            padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                            background: editCommitmentDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                            color: editCommitmentDays.includes(day) ? 'white' : 'var(--text-secondary)',
+                            border: '1.5px solid var(--border-color)',
+                          }}>
+                          {day.slice(0, 3)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <>
+                      <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Date</label>
+                      <input type="date" value={editCommitmentSpecificDate} onChange={(e) => setEditCommitmentSpecificDate(e.target.value)} />
+                    </>
+                  )}
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-primary" type="button" onClick={() => handleUpdateCommitment(commitment.id)} style={{ flex: 1 }}>Save</button>
                     <button className="btn-secondary" type="button" onClick={() => setEditingCommitmentId(null)} style={{ flex: 1 }}>Cancel</button>
@@ -3003,6 +3079,29 @@ function App() {
       {/* ── SETTINGS TAB ── */}
       {activeTab === 'settings' && (
         <div className="schedule-area" style={{ padding: '16px 14px' }}>
+
+          <div className="section-label">Font size</div>
+          <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {['small', 'medium', 'large'].map((size) => (
+                <button key={size} type="button"
+                  onClick={() => setFontSize(size)}
+                  style={{
+                    flex: 1, padding: '10px 0', borderRadius: 'var(--radius-pill)',
+                    fontWeight: 700, fontSize: size === 'small' ? 12 : size === 'large' ? 16 : 14,
+                    background: fontSize === size ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                    color: fontSize === size ? 'white' : 'var(--text-secondary)',
+                    border: `1.5px solid ${fontSize === size ? 'var(--brand)' : 'var(--border-color)'}`,
+                  }}>
+                  {size.charAt(0).toUpperCase() + size.slice(1)}
+                </button>
+              ))}
+            </div>
+            <button className="btn-primary" type="button" onClick={() => {
+              setSavedFontSize(fontSize);
+              saveSetting('fontSize', fontSize);
+            }}>Save font size</button>
+          </div>
 
           <div className="section-label">Theme</div>
           <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
