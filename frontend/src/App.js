@@ -593,13 +593,12 @@ function App() {
           }
         }
         blocks.push({
-            label: commitment.commitmentName,
-            start: commitment.commitmentStart,
-            end: commitment.commitmentEnd,
-            category: 'commitment',
-            location: null,
-          });
-        }
+          label: commitment.commitmentName,
+          start: commitment.commitmentStart,
+          end: commitment.commitmentEnd,
+          category: 'commitment',
+          location: null,
+        });
       }
     });
     if (wakeTime) {
