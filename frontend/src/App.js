@@ -403,7 +403,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then((d) => { throw new Error(d.detail); });
+          return res.json().then((d) => { 
+            throw new Error(d.detail); 
+          });
         }
         return res.json();
       })
@@ -432,7 +434,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then((d) => { throw new Error(d.detail); });
+          return res.json().then((d) => { 
+            throw new Error(d.detail); 
+          });
         }
         return res.json();
       })
@@ -487,7 +491,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then((d) => { throw new Error(d.detail); });
+          return res.json().then((d) => { 
+            throw new Error(d.detail); 
+          });
         }
         return res.json();
       })
@@ -593,14 +599,20 @@ function App() {
   }
 
   function getBlockTopPercent(timeStr, dayStart = '06:00', dayEnd = '23:00') {
-    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toMin = (t) => { 
+      const [h, m] = t.split(':').map(Number); 
+      return h * 60 + m; 
+    };
     const total = toMin(dayEnd) - toMin(dayStart);
     const offset = toMin(timeStr) - toMin(dayStart);
     return Math.max(0, Math.min(100, (offset / total) * 100));
   }
 
   function getBlockHeightPercent(startStr, endStr, dayStart = '06:00', dayEnd = '23:00') {
-    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toMin = (t) => { 
+      const [h, m] = t.split(':').map(Number); 
+      return h * 60 + m; 
+    };
     const total = toMin(dayEnd) - toMin(dayStart);
     const dur = toMin(endStr) - toMin(startStr);
     return Math.max(2, (dur / total) * 100);
@@ -608,7 +620,10 @@ function App() {
 
   function getNowPercent(dayStart = '06:00', dayEnd = '23:00') {
     const now = new Date();
-    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toMin = (t) => { 
+      const [h, m] = t.split(':').map(Number); 
+      return h * 60 + m; 
+    };
     const total = toMin(dayEnd) - toMin(dayStart);
     const offset = now.getHours() * 60 + now.getMinutes() - toMin(dayStart);
     return Math.max(0, Math.min(100, (offset / total) * 100));
@@ -673,7 +688,10 @@ function App() {
   }
 
   function getBlockDuration(start, end) {
-    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const toMin = (t) => { 
+      const [h, m] = t.split(':').map(Number); 
+      return h * 60 + m; 
+    };
     let s = toMin(start); let e = toMin(end);
     if (e <= s) {
       e += 1440;
@@ -789,11 +807,19 @@ function App() {
     if (!wakeTime || !sleepTime) {
       return null;
     }
-    const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); const total = h * 60 + m; return total === 0 ? 1440 : total; };
+    const toMinutes = (time) => { 
+      const [h, m] = time.split(':').map(Number); 
+      const total = h * 60 + m; 
+      return total; 
+    };
     const effectiveWake = wakeTime;
     const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
-    let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
+    let sleep = toMinutes(effectiveSleep);
+    if (sleep === 0) { 
+      sleep = 1440; 
+    }
+    sleep = sleep - savedNightBuffer;
     if (sleep <= toMinutes(effectiveWake)) {
       sleep += 1440;
     }
@@ -993,13 +1019,25 @@ function App() {
     if (!wakeTime || !sleepTime) {
       return [];
     }
-    const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); const total = h * 60 + m; return total === 0 ? 1440 : total; };
-    const toTimeString = (minutes) => { const wrapped = minutes % 1440; const h = Math.floor(wrapped / 60); const m = wrapped % 60; return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; };
+    const toMinutes = (time) => { 
+      const [h, m] = time.split(':').map(Number); 
+      return h * 60 + m; 
+    };
+    const toTimeString = (minutes) => { 
+      const wrapped = minutes % 1440; 
+      const h = Math.floor(wrapped / 60); 
+      const m = wrapped % 60; 
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; 
+    };
     const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
     const effectiveWake = wakeTime;
     const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
-    let sleep = toMinutes(effectiveSleep) - savedNightBuffer;
+    let sleep = toMinutes(effectiveSleep);
+    if (sleep === 0) { 
+      sleep = 1440; 
+    }
+    sleep = sleep - savedNightBuffer;
     if (sleep <= toMinutes(effectiveWake)) {
       sleep += 1440;
     }
@@ -1436,7 +1474,10 @@ function App() {
       body: JSON.stringify({ taskName: editTaskName.trim(), deadline: editDeadline, difficulty: Number(editDifficulty), importance: Number(editImportance), userPreference: Number(editUserPreference), duration: Number(editDuration), taskType: editTaskType, category: editCategory, workOnDueDate: editWorkOnDueDate, description: editDescription })
     })
       .then((res) => res.json())
-      .then((saved) => { setTasks(tasks.map((t) => t.id === taskId ? { ...t, ...saved } : t)); setEditingTaskId(null); })
+      .then((saved) => { 
+        setTasks(tasks.map((t) => t.id === taskId ? { ...t, ...saved } : t)); 
+        setEditingTaskId(null); 
+      })
       .catch((err) => console.error('Failed to update task:', err));
   }
 
@@ -1535,7 +1576,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then((d) => { throw new Error(d.detail); });
+          return res.json().then((d) => { 
+            throw new Error(d.detail); 
+          });
         }
         return res.json();
       })
@@ -1549,7 +1592,10 @@ function App() {
         setCurrentPassword(''); setNewUsername(''); setNewEmail('');
         setNewPassword(''); setConfirmNewPassword('');
       })
-      .catch((err) => { setUpdateAccountError(err.message); setUpdateAccountMessage(''); });
+      .catch((err) => { 
+        setUpdateAccountError(err.message); 
+        setUpdateAccountMessage(''); 
+      });
   }
 
   function handleDeleteAccount() {
@@ -1566,7 +1612,9 @@ function App() {
     })
     .then((res) => {
       if (!res.ok) {
-        return res.json().then((d) => { throw new Error(d.detail); });
+        return res.json().then((d) => { 
+          throw new Error(d.detail); 
+        });
       }
       return res.json();
     })
@@ -1590,7 +1638,10 @@ function App() {
         alert('Please set both a start and end time for this meal.'); 
         return; 
       }
-      const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
+      const toMinutes = (time) => { 
+        const [h, m] = time.split(':').map(Number); 
+        return h * 60 + m; 
+      };
       if (toMinutes(mealEnd) <= toMinutes(mealStart)) { 
         alert('Meal end time must be after start time.'); 
         return; 
@@ -1632,7 +1683,10 @@ function App() {
       body: JSON.stringify({ mealName: editMealName, mealStart: editMealTimeMode === 'fixed' ? editMealStart : null, mealEnd: editMealTimeMode === 'fixed' ? editMealEnd : null, commuteTime: editMealCommuteTime, timeMode: editMealTimeMode, flexDuration: editMealFlexDuration, flexPreference: editMealFlexPreference })
     })
       .then((res) => res.json())
-      .then((saved) => { setMeals(meals.map((meal) => meal.id === mealId ? saved : meal)); setEditingMealId(null); })
+      .then((saved) => { 
+        setMeals(meals.map((meal) => meal.id === mealId ? saved : meal)); 
+        setEditingMealId(null); 
+      })
       .catch((err) => console.error('Failed to update meal:', err));
   }
 
@@ -1642,7 +1696,12 @@ function App() {
       body: JSON.stringify({ actual_start: actualMealStart, actual_end: actualMealEnd })
     })
       .then((res) => res.json())
-      .then((saved) => { setMeals(meals.map((meal) => meal.id === mealId ? saved : meal)); setMealFeedbackId(null); setActualMealStart(''); setActualMealEnd(''); })
+      .then((saved) => { 
+        setMeals(meals.map((meal) => meal.id === mealId ? saved : meal)); 
+        setMealFeedbackId(null); 
+        setActualMealStart(''); 
+        setActualMealEnd(''); 
+      })
       .catch((err) => console.error('Failed to log actual meal time:', err));
   }
 
@@ -1664,7 +1723,10 @@ function App() {
         alert('Please set both a start and end time for this commitment.'); 
         return; 
       }
-      const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
+      const toMinutes = (time) => { 
+        const [h, m] = time.split(':').map(Number); 
+        return h * 60 + m; 
+      };
       if (toMinutes(commitmentEnd) <= toMinutes(commitmentStart)) { 
         alert('Commitment end time must be after start time.'); 
         return; 
@@ -1709,7 +1771,10 @@ function App() {
       body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentDays.join(',') })
     })
       .then((res) => res.json())
-      .then((saved) => { setCommitments(commitments.map((c) => c.id === commitmentId ? saved : c)); setEditingCommitmentId(null); })
+      .then((saved) => { 
+        setCommitments(commitments.map((c) => c.id === commitmentId ? saved : c)); 
+        setEditingCommitmentId(null); 
+      })
       .catch((err) => console.error('Failed to update commitment:', err));
   }
 
@@ -1721,7 +1786,10 @@ function App() {
       alert('Please set both a wake time and a sleep time.'); 
       return; 
     }
-    const toMinutes = (time) => { const [h, m] = time.split(':').map(Number); return h * 60 + m; };
+    const toMinutes = (time) => { 
+      const [h, m] = time.split(':').map(Number); 
+      return h * 60 + m; 
+    };
     const wakeMin = toMinutes(wakeTime); const sleepMin = toMinutes(sleepTime);
     const availableMinutes = sleepMin > wakeMin ? sleepMin - wakeMin : (sleepMin + 1440) - wakeMin;
     if (availableMinutes < 60) { 
@@ -1811,7 +1879,9 @@ function App() {
     })
       .then((res) => {
         if (!res.ok) {
-          return res.json().then((d) => { throw new Error(d.detail); });
+          return res.json().then((d) => { 
+            throw new Error(d.detail); 
+          });
         }
         return res.json();
       })
@@ -1821,7 +1891,10 @@ function App() {
         setFeedbackCategory('');
         setFeedbackComment('');
       })
-      .catch((err) => { setFeedbackError(err.message); setFeedbackMessage(''); });
+      .catch((err) => { 
+        setFeedbackError(err.message); 
+        setFeedbackMessage(''); 
+      });
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1870,7 +1943,13 @@ function App() {
           {forgotMessage ? (
             <div>
               <p>{forgotMessage}</p>
-              <button type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to Login</button>
+              <button type="button" onClick={() => { 
+                setForgotMode(null); 
+                setForgotEmail(''); 
+                setForgotMessage(''); 
+              }}>
+                Back to Login
+              </button>
             </div>
           ) : (
             <div>
@@ -1882,7 +1961,15 @@ function App() {
               <button type="button" onClick={handleForgotSubmit}>
                 {forgotMode === 'password' ? 'Send Reset Link' : 'Send Username'}
               </button>
-              <p><button type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to Login</button></p>
+              <p>
+                <button type="button" onClick={() => { 
+                  setForgotMode(null); 
+                  setForgotEmail(''); 
+                  setForgotMessage(''); 
+                }}>
+                  Back to Login
+                </button>
+              </p>
             </div>
           )}
         </div>
@@ -1912,16 +1999,42 @@ function App() {
           <div>
             <button type="button" onClick={handleLogin}>Log In</button>
             <p>
-              <button type="button" onClick={() => { setForgotMode('username'); setAuthError(''); }}>Forgot username?</button>
+              <button type="button" onClick={() => { 
+                setForgotMode('username'); 
+                setAuthError(''); 
+              }}>
+                Forgot username?
+              </button>
               {' · '}
-              <button type="button" onClick={() => { setForgotMode('password'); setAuthError(''); }}>Forgot password?</button>
+              <button type="button" onClick={() => { 
+                setForgotMode('password'); 
+                setAuthError(''); 
+              }}>
+                Forgot password?
+              </button>
             </p>
-            <p>Don't have an account? <button type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}>Create one</button></p>
+            <p>
+              Don't have an account? 
+              <button type="button" onClick={() => { 
+                setAuthMode('register'); 
+                setAuthError(''); 
+              }}>
+                Create one
+              </button>
+            </p>
           </div>
         ) : (
           <div>
             <button type="button" onClick={handleRegister}>Create Account</button>
-            <p>Already have an account? <button type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }}>Log in</button></p>
+            <p>
+              Already have an account? 
+              <button type="button" onClick={() => { 
+                setAuthMode('login'); 
+                setAuthError(''); 
+              }}>
+                Log in
+              </button>
+            </p>
           </div>
         )}
       </div>
@@ -2007,7 +2120,13 @@ function App() {
           {forgotMessage ? (
             <div className="card" style={{ width: '100%' }}>
               <p style={{ marginBottom: 16 }}>{forgotMessage}</p>
-              <button className="btn-primary" type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to login</button>
+              <button className="btn-primary" type="button" onClick={() => { 
+                setForgotMode(null); 
+                setForgotEmail(''); 
+                setForgotMessage(''); 
+              }}>
+                Back to login
+              </button>
             </div>
           ) : (
             <div className="card" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -2017,7 +2136,13 @@ function App() {
               <button className="btn-primary" type="button" onClick={handleForgotSubmit} style={{ marginTop: 8 }}>
                 {forgotMode === 'password' ? 'Send reset link' : 'Send username'}
               </button>
-              <button className="btn-secondary" type="button" onClick={() => { setForgotMode(null); setForgotEmail(''); setForgotMessage(''); }}>Back to login</button>
+              <button className="btn-secondary" type="button" onClick={() => { 
+                setForgotMode(null); 
+                setForgotEmail(''); 
+                setForgotMessage(''); 
+              }}>
+                Back to login
+              </button>
             </div>
           )}
         </div>
@@ -2042,22 +2167,48 @@ function App() {
           <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="username" />
           <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Password</label>
           <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••"
-            onKeyDown={(e) => { if (e.key === 'Enter') { authMode === 'login' ? handleLogin() : handleRegister(); } }} />
+            onKeyDown={(e) => { 
+              if (e.key === 'Enter') { 
+                authMode === 'login' ? handleLogin() : handleRegister(); 
+              } 
+            }} 
+          />
           {authMode === 'login' ? (
             <>
               <button className="btn-primary" type="button" onClick={handleLogin} style={{ marginTop: 8 }}>Log in</button>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
-                <button className="btn-secondary" type="button" onClick={() => { setForgotMode('username'); setAuthError(''); }}>Forgot username?</button>
-                <button className="btn-secondary" type="button" onClick={() => { setForgotMode('password'); setAuthError(''); }}>Forgot password?</button>
+                <button className="btn-secondary" type="button" onClick={() => { 
+                  setForgotMode('username'); 
+                  setAuthError(''); 
+                }}>
+                  Forgot username?
+                </button>
+                <button className="btn-secondary" type="button" onClick={() => { 
+                  setForgotMode('password'); 
+                  setAuthError(''); 
+                }}>
+                  Forgot password?
+                </button>
               </div>
               <div className="divider" />
-              <button className="btn-secondary" type="button" onClick={() => { setAuthMode('register'); setAuthError(''); }}>Create an account</button>
+              <button className="btn-secondary" type="button" onClick={() => { 
+                setAuthMode('register'); 
+                setAuthError(''); 
+              }}>
+                Create an account
+              </button>
             </>
           ) : (
             <>
               <button className="btn-primary" type="button" onClick={handleRegister} style={{ marginTop: 8 }}>Create account</button>
               <div className="divider" />
-              <button className="btn-secondary" type="button" onClick={() => { setAuthMode('login'); setAuthError(''); }}>Already have an account? Log in</button>
+              <p>Already have an account? </p>
+              <button className="btn-secondary" type="button" onClick={() => { 
+                setAuthMode('login'); 
+                setAuthError(''); 
+              }}>
+                Log in
+              </button>
             </>
           )}
         </div>
@@ -2076,8 +2227,8 @@ function App() {
           <span className="topbar-name">Atlas</span>
         </div>
         <div className="topbar-right">
-          <button className="topbar-icon-btn" type="button" onClick={handleLogout} title="Log out">
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>Out</span>
+          <button className="topbar-icon-btn" type="button" onClick={handleLogout} title="Log out" style={{ width: 'auto', padding: '0 10px' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)' }}>Log Out</span>
           </button>
           <div className="topbar-avatar">{username.slice(0, 2).toUpperCase()}</div>
         </div>
@@ -2106,7 +2257,13 @@ function App() {
             {weekDays.map((day, i) => (
               <button key={i} type="button"
                 className={`day-chip${isToday(day) ? ' today' : ''}${getBlocksForDay(day).length > 0 ? ' has-events' : ''}`}
-                onClick={() => { setSelectedDay(day); if (scheduleView !== 'month') { setScheduleView('day'); } }}>
+                onClick={() => { 
+                  setSelectedDay(day); 
+                  if (scheduleView !== 'month') { 
+                    setScheduleView('day'); 
+                  } 
+                }}
+              >
                 <span className="day-chip-name">{DAY_NAMES[day.getDay()]}</span>
                 <span className="day-chip-num">{day.getDate()}</span>
                 <div className="day-chip-dot" />
@@ -2259,7 +2416,12 @@ function App() {
                     <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4, marginBottom: 4 }}>
                       {week.map((day, di) => (
                         <button key={di} type="button"
-                          onClick={() => { if (day) { setSelectedDay(day); setScheduleView('day'); } }}
+                          onClick={() => { 
+                            if (day) { 
+                              setSelectedDay(day); 
+                              setScheduleView('day'); 
+                            } 
+                          }}
                           style={{
                             background: day && isToday(day) ? 'var(--brand)' : day && isSameDay(day, selectedDay) ? 'var(--brand-light)' : 'var(--bg-surface)',
                             border: '1.5px solid var(--border-color)',
@@ -2322,7 +2484,12 @@ function App() {
               placeholder='e.g. "Study for stats exam Friday, 2 hours, hard"'
               value={nlInput}
               onChange={(e) => setNlInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { handleNaturalLanguageInput(); } }} />
+              onKeyDown={(e) => { 
+                if (e.key === 'Enter') { 
+                  handleNaturalLanguageInput(); 
+                } 
+              }} 
+            />
             <button className="btn-primary" type="button" onClick={handleNaturalLanguageInput}
               disabled={nlLoading} style={{ marginTop: 10 }}>
               {nlLoading ? 'Parsing...' : 'Fill form'}
@@ -2334,7 +2501,12 @@ function App() {
           <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Task name</label>
             <input type="text" placeholder="e.g. Study for Math exam" value={taskName}
-              onChange={(e) => { setTaskName(e.target.value); setAutoTaskType(classifyTask(e.target.value, difficulty)); setUserOverrideType(null); }} />
+              onChange={(e) => { 
+                setTaskName(e.target.value); 
+                setAutoTaskType(classifyTask(e.target.value, difficulty)); 
+                setUserOverrideType(null); 
+              }} 
+            />
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Description (optional)</label>
             <textarea placeholder="e.g. Binary trees chapters 5–7" value={description}
               onChange={(e) => setDescription(e.target.value)} rows={2} />
@@ -2351,7 +2523,12 @@ function App() {
               Difficulty: {difficulty}
             </label>
             <input type="range" min="0" max="10" step="0.01" value={difficulty}
-              onChange={(e) => { setDifficulty(e.target.value); setAutoTaskType(classifyTask(taskName, e.target.value)); setUserOverrideType(null); }} />
+              onChange={(e) => { 
+                setDifficulty(e.target.value); 
+                setAutoTaskType(classifyTask(taskName, e.target.value)); 
+                setUserOverrideType(null); 
+              }} 
+            />
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
               Importance: {importance}
             </label>
@@ -2367,7 +2544,9 @@ function App() {
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Depends on</label>
             <select value="" onChange={(e) => {
               const id = Number(e.target.value);
-              if (id && !taskDependencies.includes(id)) { setTaskDependencies([...taskDependencies, id]); }
+              if (id && !taskDependencies.includes(id)) { 
+                setTaskDependencies([...taskDependencies, id]); 
+              }
             }}>
               <option value="">Add a dependency...</option>
               {tasks.filter((t) => !t.completion_status).map((t) => (
@@ -2458,7 +2637,12 @@ function App() {
                     <input type="range" min="0" max="10" step="0.01" value={actualDifficulty} onChange={(e) => setActualDifficulty(e.target.value)} />
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn-primary" type="button" onClick={() => handleSubmitFeedback(task.id)} style={{ flex: 1 }}>Submit</button>
-                      <button className="btn-secondary" type="button" onClick={() => { setFeedbackTaskId(null); setPreviousDuration(0); }} style={{ flex: 1 }}>Cancel</button>
+                      <button className="btn-secondary" type="button" onClick={() => { 
+                        setFeedbackTaskId(null); 
+                        setPreviousDuration(0); 
+                      }} style={{ flex: 1 }}>
+                        Cancel
+                      </button>
                     </div>
                   </div>
                 ) : editingTaskId === task.id ? (
@@ -2489,7 +2673,11 @@ function App() {
                   <div style={{ display: 'flex', gap: 8 }}>
                     {activeTaskId === task.id ? (
                       <button className="btn-primary" type="button"
-                        onClick={() => { handleStopTask(); handleOpenFeedback(task.id); setActiveTaskId(null); }}
+                        onClick={() => { 
+                          handleStopTask(); 
+                          handleOpenFeedback(task.id); 
+                          setActiveTaskId(null); 
+                        }}
                         style={{ flex: 1 }}>Stop timer</button>
                     ) : (
                       <button className="btn-secondary" type="button"
@@ -2508,7 +2696,9 @@ function App() {
 
           {(() => {
             const completedTasks = tasks.filter((t) => t.completion_status === 'Completed');
-            if (completedTasks.length === 0) { return null; }
+            if (completedTasks.length === 0) { 
+              return null; 
+            }
             return (
               <div>
                 <button className="btn-secondary" type="button"
@@ -2748,7 +2938,9 @@ function App() {
             <>
               {(() => {
                 const streak = calculateStreak();
-                if (streak === 0) { return null; }
+                if (streak === 0) { 
+                  return null; 
+                }
                 return (
                   <div className="card" style={{ marginBottom: 12, background: 'var(--cat-lemon)', border: '1.5px solid var(--cat-free-border)' }}>
                     <p style={{ fontWeight: 700, color: 'var(--cat-free-text)' }}>🔥 {streak}-day streak!</p>
@@ -2761,7 +2953,9 @@ function App() {
 
               {(() => {
                 const suggestions = generateSuggestions();
-                if (suggestions.length === 0) { return null; }
+                if (suggestions.length === 0) { 
+                  return null; 
+                }
                 return (
                   <div style={{ marginBottom: 16 }}>
                     <div className="section-label">Suggestions</div>
@@ -2838,25 +3032,50 @@ function App() {
               <option value="12">12-hour (AM/PM)</option>
               <option value="24">24-hour</option>
             </select>
-            <button className="btn-primary" type="button" onClick={() => { setSavedClockFormat(clockFormat); saveSetting('clockFormat', clockFormat); }}>Save clock format</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedClockFormat(clockFormat); 
+              saveSetting('clockFormat', clockFormat); 
+            }}>
+              Save clock format
+            </button>
 
             <div className="divider" />
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Max deep work block (min): {maxBlockLength}</label>
             <input type="number" min="0" max="180" value={maxBlockLength} onChange={(e) => setMaxBlockLength(clamp(e.target.value, 0, 180))} />
-            <button className="btn-primary" type="button" onClick={() => { setSavedMaxBlockLength(maxBlockLength); saveSetting('maxBlockLength', maxBlockLength); }}>Save</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedMaxBlockLength(maxBlockLength); 
+              saveSetting('maxBlockLength', maxBlockLength); 
+            }}>
+              Save
+            </button>
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Morning buffer (min): {morningBuffer}</label>
             <input type="number" min="0" max="120" value={morningBuffer} onChange={(e) => setMorningBuffer(clamp(e.target.value, 0, 120))} />
-            <button className="btn-primary" type="button" onClick={() => { setSavedMorningBuffer(morningBuffer); saveSetting('morningBuffer', morningBuffer); }}>Save</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedMorningBuffer(morningBuffer); 
+              saveSetting('morningBuffer', morningBuffer); 
+            }}>
+              Save
+            </button>
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Night buffer (min): {nightBuffer}</label>
             <input type="number" min="0" max="120" value={nightBuffer} onChange={(e) => setNightBuffer(clamp(e.target.value, 0, 120))} />
-            <button className="btn-primary" type="button" onClick={() => { setSavedNightBuffer(nightBuffer); saveSetting('nightBuffer', nightBuffer); }}>Save</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedNightBuffer(nightBuffer); 
+              saveSetting('nightBuffer', nightBuffer); 
+            }}>
+              Save
+            </button>
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Transition gap (min): {transitionGap}</label>
             <input type="number" min="0" max="30" value={transitionGap} onChange={(e) => setTransitionGap(clamp(e.target.value, 0, 30))} />
-            <button className="btn-primary" type="button" onClick={() => { setSavedTransitionGap(transitionGap); saveSetting('transitionGap', transitionGap); }}>Save</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedTransitionGap(transitionGap); 
+              saveSetting('transitionGap', transitionGap); 
+            }}>
+              Save
+            </button>
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Shower duration (min): {showerDuration}</label>
             <input type="number" min="0" max="60" value={showerDuration} onChange={(e) => setShowerDuration(clamp(e.target.value, 0, 60))} />
@@ -2869,7 +3088,14 @@ function App() {
               <option value="evening_late">Late evening (9pm-before bed)</option>
               <option value="both">Both morning & evening</option>
             </select>
-            <button className="btn-primary" type="button" onClick={() => { setSavedShowerDuration(showerDuration); setSavedShowerPreference(showerPreference); saveSetting('showerDuration', showerDuration); saveSetting('showerPreference', showerPreference); }}>Save shower settings</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedShowerDuration(showerDuration); 
+              setSavedShowerPreference(showerPreference); 
+              saveSetting('showerDuration', showerDuration); 
+              saveSetting('showerPreference', showerPreference); 
+            }}>
+              Save shower settings
+            </button>
 
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Energy pattern</label>
             <select value={energyPattern} onChange={(e) => setEnergyPattern(e.target.value)}>
@@ -2878,7 +3104,12 @@ function App() {
               <option value="evening">Evening person (5pm–10pm)</option>
               <option value="between">Between classes</option>
             </select>
-            <button className="btn-primary" type="button" onClick={() => { setSavedEnergyPattern(energyPattern); saveSetting('energyPattern', energyPattern); }}>Save</button>
+            <button className="btn-primary" type="button" onClick={() => { 
+              setSavedEnergyPattern(energyPattern); 
+              saveSetting('energyPattern', energyPattern); 
+            }}>
+              Save
+            </button>
           </div>
 
           <div className="section-label">Custom keywords</div>
