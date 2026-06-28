@@ -712,3 +712,49 @@
   line-height: 1;
   padding-bottom: 1px;
 }
+
+/* ─── Global input / select / textarea base styles ───────────────────────── */
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-size-base, 16px);
+  font-family: inherit;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand);
+}
+
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--brand);
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+input[type="checkbox"] {
+  width: auto;
+  padding: 0;
+  border: none;
+}

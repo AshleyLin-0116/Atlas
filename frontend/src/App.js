@@ -390,7 +390,7 @@ function App() {
   }, [token]);
   
   useEffect(() => {
-    const sizeMap = { small: '13px', medium: '16px', large: '19px' };
+    const sizeMap = { small: '11px', medium: '16px', large: '21px' };
     document.documentElement.style.setProperty('--font-size-base', sizeMap[savedFontSize] || '16px');
   }, [savedFontSize]);
 
@@ -2554,7 +2554,7 @@ function App() {
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
               Difficulty: {difficulty}
             </label>
-            <input type="range" min="0" max="10" step="0.01" value={difficulty}
+            <input type="range" min="0" max="10" step="0.1" value={difficulty}
               onChange={(e) => { 
                 setDifficulty(e.target.value); 
                 setAutoTaskType(classifyTask(taskName, e.target.value)); 
@@ -2564,11 +2564,11 @@ function App() {
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
               Importance: {importance}
             </label>
-            <input type="range" min="0" max="10" step="0.01" value={importance} onChange={(e) => setImportance(e.target.value)} />
+            <input type="range" min="0" max="10" step="0.1" value={importance} onChange={(e) => setImportance(e.target.value)} />
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
               Personal priority: {userPreference}
             </label>
-            <input type="range" min="0" max="10" step="0.01" value={userPreference} onChange={(e) => setUserPreference(e.target.value)} />
+            <input type="range" min="0" max="10" step="0.1" value={userPreference} onChange={(e) => setUserPreference(e.target.value)} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <input type="checkbox" id="workOnDueDate" checked={workOnDueDate} onChange={(e) => setWorkOnDueDate(e.target.checked)} style={{ width: 'auto' }} />
               <label htmlFor="workOnDueDate" style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Can work on due date</label>
@@ -2666,7 +2666,7 @@ function App() {
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Duration (minutes)</label>
                     <input type="number" min="0" value={actualDuration} onChange={(e) => setActualDuration(e.target.value)} />
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Actual difficulty: {actualDifficulty}</label>
-                    <input type="range" min="0" max="10" step="0.01" value={actualDifficulty} onChange={(e) => setActualDifficulty(e.target.value)} />
+                    <input type="range" min="0" max="10" step="0.1" value={actualDifficulty} onChange={(e) => setActualDifficulty(e.target.value)} />
                     <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn-primary" type="button" onClick={() => handleSubmitFeedback(task.id)} style={{ flex: 1 }}>Submit</button>
                       <button className="btn-secondary" type="button" onClick={() => { 
@@ -2689,9 +2689,9 @@ function App() {
                     </select>
                     <input type="number" min="0" value={editDuration} onChange={(e) => setEditDuration(e.target.value)} placeholder="Duration (min)" />
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Difficulty: {editDifficulty}</label>
-                    <input type="range" min="0" max="10" step="0.01" value={editDifficulty} onChange={(e) => setEditDifficulty(e.target.value)} />
+                    <input type="range" min="0" max="10" step="0.1" value={editDifficulty} onChange={(e) => setEditDifficulty(e.target.value)} />
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Importance: {editImportance}</label>
-                    <input type="range" min="0" max="10" step="0.01" value={editImportance} onChange={(e) => setEditImportance(e.target.value)} />
+                    <input type="range" min="0" max="10" step="0.1" value={editImportance} onChange={(e) => setEditImportance(e.target.value)} />
                     <select value={editTaskType} onChange={(e) => setEditTaskType(e.target.value)}>
                       <option value="deep">Deep Work</option>
                       <option value="light">Light Work</option>
