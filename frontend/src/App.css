@@ -290,12 +290,12 @@
 }
 
 .block-emoji {
-  font-size: 10px;
+  font-size: calc(var(--font-size-base, 16px) * 0.65);
   line-height: 1;
 }
 
 .block-label {
-  font-size: 8px;
+  font-size: calc(var(--font-size-base, 16px) * 0.5);
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
@@ -482,7 +482,7 @@
 .tl-block.cat-commute { background: var(--cat-commute); }
 
 .tl-block-name {
-  font-size: 12px;
+  font-size: calc(var(--font-size-base, 16px) * 0.8);
   font-weight: 700;
   margin-bottom: 2px;
 }
@@ -506,7 +506,7 @@
 }
 
 .tl-block-time {
-  font-size: 10px;
+  font-size: calc(var(--font-size-base, 16px) * 0.65);
   font-weight: 600;
   opacity: 0.65;
 }
