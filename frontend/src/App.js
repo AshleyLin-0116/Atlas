@@ -1168,14 +1168,14 @@ function App() {
       return h * 60 + m;
     };
     const isOccupied = (start, end) => schedule.some((block) => start < blockToMin(block.end) && end > blockToMin(block.start));
-    const getNextFreeStart = (from) => {
+    const getNextFreeStart = (from, minChunk = 15) => {
       let time = from; let safetyCounter = 0;
       while (safetyCounter < 1000) {
         safetyCounter++;
         if (time >= sleep) {
           return sleep;
         }
-        if (!isOccupied(time, time + 1)) {
+        if (!isOccupied(time, time + minChunk)) {
           return time;
         }
         time++;
