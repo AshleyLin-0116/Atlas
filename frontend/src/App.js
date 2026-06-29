@@ -630,35 +630,27 @@ function App() {
     return blocks.sort((a, b) => a.start.localeCompare(b.start));
   }
 
-  function getBlockTopPercent(timeStr, dayStart = '00:00', dayEnd = '24:00') {
-    const toMin = (t) => { 
-      const [h, m] = t.split(':').map(Number); 
-      return h * 60 + m; 
+  function getBlockTopPercent(timeStr) {
+    const toMin = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
     };
-    const total = toMin(dayEnd) - toMin(dayStart);
-    const offset = toMin(timeStr) - toMin(dayStart);
-    return Math.max(0, Math.min(100, (offset / total) * 100));
+    return Math.max(0, Math.min(100, (toMin(timeStr) / 1440) * 100));
   }
 
-  function getBlockHeightPercent(startStr, endStr, dayStart = '00:00', dayEnd = '24:00') {
-    const toMin = (t) => { 
-      const [h, m] = t.split(':').map(Number); 
-      return h * 60 + m; 
+  function getBlockHeightPercent(startStr, endStr) {
+    const toMin = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
     };
-    const total = toMin(dayEnd) - toMin(dayStart);
     const dur = toMin(endStr) - toMin(startStr);
-    return Math.max(2, (dur / total) * 100);
+    return Math.max(0.5, (dur / 1440) * 100);
   }
 
-  function getNowPercent(dayStart = '00:00', dayEnd = '24:00') {
+  function getNowPercent() {
     const now = new Date();
-    const toMin = (t) => { 
-      const [h, m] = t.split(':').map(Number); 
-      return h * 60 + m; 
-    };
-    const total = toMin(dayEnd) - toMin(dayStart);
-    const offset = now.getHours() * 60 + now.getMinutes() - toMin(dayStart);
-    return Math.max(0, Math.min(100, (offset / total) * 100));
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    return Math.max(0, Math.min(100, (nowMin / 1440) * 100));
   }
 
   function formatTime(time) {
