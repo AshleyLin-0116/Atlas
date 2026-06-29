@@ -609,7 +609,8 @@ function App() {
         });
       }
     });
-    if (generatedSchedule.length === 0) {
+    const hasScheduleForDay = generatedSchedule.some((b) => b.generatedForDate === date.toDateString());
+    if (!hasScheduleForDay) {
       if (wakeTime) {
         blocks.push({ label: 'Sleep', start: '00:00', end: wakeTime, category: 'sleep', location: null });
       }
@@ -618,7 +619,11 @@ function App() {
       }
     }
     const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment', sleep: 'sleep' };
+    const todayDateStr = new Date().toDateString();
     generatedSchedule.forEach((block) => {
+      if (block.generatedForDate && block.generatedForDate !== date.toDateString()) {
+        return;
+      }
       if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep'].includes(block.type)) {
         blocks.push({
           label: block.label,
@@ -1169,7 +1174,8 @@ function App() {
     };
     const isOccupied = (start, end) => schedule.some((block) => start < blockToMin(block.end) && end > blockToMin(block.start));
     const getNextFreeStart = (from, minChunk = 15) => {
-      let time = from; let safetyCounter = 0;
+      let time = from; 
+      let safetyCounter = 0;
       while (safetyCounter < 1000) {
         safetyCounter++;
         if (time >= sleep) {
@@ -1330,13 +1336,18 @@ function App() {
         if (currentTime >= sleep) {
           break;
         }
-        let blockEnd = Math.min(currentTime + Math.min(remaining, limit), sleep);
-        while (blockEnd > currentTime && isOccupiedAt(currentTime, blockEnd)) {
-          blockEnd--;
+        const chunkSize = Math.min(remaining, limit);
+        let blockEnd = Math.min(currentTime + chunkSize, sleep);
+        if (isOccupiedAt(currentTime, blockEnd)) {
+          let freeEnd = currentTime;
+          while (freeEnd < blockEnd && !isOccupiedAt(freeEnd, freeEnd + 1)) {
+            freeEnd++;
+          }
+          blockEnd = freeEnd;
         }
         const blockSize = blockEnd - currentTime;
-        if (blockSize <= 0) {
-          currentTime++;
+        if (blockSize < 15) {
+          currentTime = getNextFreeStart(blockEnd + 1);
           continue;
         }
         schedule.push({ start: toTimeString(currentTime), end: toTimeString(blockEnd), label: task.taskName, type: isInPeak(currentTime) ? 'peak' : 'study', taskType: task.taskType });
@@ -1363,8 +1374,8 @@ function App() {
     if (toMinutes(effectiveSleep) > 0) {
       schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
     }
-
     // Sort and merge consecutive commute blocks
+    const todayStr = new Date().toDateString();
     const sorted = schedule.sort((a, b) => a.start.localeCompare(b.start));
     const merged = [];
     let i = 0;
@@ -1381,6 +1392,7 @@ function App() {
         i++;
       }
     }
+    merged.forEach((block) => { block.generatedForDate = todayStr; });
     return merged;
   }
 
