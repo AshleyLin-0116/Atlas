@@ -630,7 +630,7 @@ function App() {
     return blocks.sort((a, b) => a.start.localeCompare(b.start));
   }
 
-  function getBlockTopPercent(timeStr, dayStart = '06:00', dayEnd = '23:00') {
+  function getBlockTopPercent(timeStr, dayStart = '00:00', dayEnd = '24:00') {
     const toMin = (t) => { 
       const [h, m] = t.split(':').map(Number); 
       return h * 60 + m; 
@@ -640,7 +640,7 @@ function App() {
     return Math.max(0, Math.min(100, (offset / total) * 100));
   }
 
-  function getBlockHeightPercent(startStr, endStr, dayStart = '06:00', dayEnd = '23:00') {
+  function getBlockHeightPercent(startStr, endStr, dayStart = '00:00', dayEnd = '24:00') {
     const toMin = (t) => { 
       const [h, m] = t.split(':').map(Number); 
       return h * 60 + m; 
@@ -650,7 +650,7 @@ function App() {
     return Math.max(2, (dur / total) * 100);
   }
 
-  function getNowPercent(dayStart = '06:00', dayEnd = '23:00') {
+  function getNowPercent(dayStart = '00:00', dayEnd = '24:00') {
     const now = new Date();
     const toMin = (t) => { 
       const [h, m] = t.split(':').map(Number); 
@@ -2347,9 +2347,10 @@ function App() {
             <div className="schedule-area">
               <div className="week-grid">
                 <div className="time-gutter">
-                  {['6am','8am','10am','12pm','2pm','4pm','6pm','8pm','10pm'].map((t) => (
-                    <div key={t} className="time-gutter-label">{t}</div>
-                  ))}
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const label = i === 0 ? '12am' : i < 12 ? `${i}am` : i === 12 ? '12pm' : `${i - 12}pm`;
+                    return <div key={i} className="time-gutter-label">{label}</div>;
+                  })}
                 </div>
                 {weekDays.map((day, di) => {
                   const blocks = getBlocksForDay(day);
