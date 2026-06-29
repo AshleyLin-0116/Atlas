@@ -2377,7 +2377,7 @@ function App() {
           {/* ── DAY VIEW ── */}
           {scheduleView === 'day' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
-              <div className="day-detail-header">
+              <div className="day-detail-header" style={{ flexShrink: 0 }}>
                 <div className="day-detail-title-row">
                   <button className="back-btn" type="button" onClick={() => setScheduleView('week')}>←</button>
                   <div>
@@ -2402,7 +2402,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="day-timeline">
+              <div className="day-timeline" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                 {(() => {
                   const blocks = getBlocksForDay(selectedDay);
                   if (blocks.length === 0) {
