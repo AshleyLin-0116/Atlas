@@ -55,6 +55,8 @@ def normalize(row):
         'mealstart': 'mealStart',
         'mealend': 'mealEnd',
         'commutetime': 'commuteTime',
+        'commutetimeto': 'commuteTimeTo',
+        'commutetimefrom': 'commuteTimeFrom',
         'timemode': 'timeMode',
         'flexduration': 'flexDuration',
         'flexpreference': 'flexPreference',
@@ -64,6 +66,9 @@ def normalize(row):
         'commitmenttype': 'commitmentType',
         'waketime': 'wakeTime',
         'sleeptime': 'sleepTime',
+        'specificdate': 'specificDate',
+        'commutetimeto': 'commuteTimeTo',
+        'commutetimefrom': 'commuteTimeFrom',
     }
     return {key_map.get(k, k): v for k, v in dict(row).items()}
 
@@ -142,8 +147,24 @@ def init_db():
             timeMode TEXT DEFAULT 'fixed',
             flexDuration INTEGER DEFAULT 0,
             flexPreference TEXT DEFAULT 'any',
-            days TEXT DEFAULT ''
+            days TEXT DEFAULT '',
+        specificDate TEXT
         )
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS specificDate TEXT
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS commuteTimeTo INTEGER
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS commuteTimeFrom INTEGER
+    """)
+    cur.execute("""
+        ALTER TABLE meals ADD COLUMN IF NOT EXISTS commuteTimeTo INTEGER
+    """)
+    cur.execute("""
+        ALTER TABLE meals ADD COLUMN IF NOT EXISTS commuteTimeFrom INTEGER
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS sleep_schedule (
@@ -274,6 +295,8 @@ class Meal(BaseModel):
     mealStart: Optional[str] = None
     mealEnd: Optional[str] = None
     commuteTime: Optional[int] = 0
+    commuteTimeTo: Optional[int] = None
+    commuteTimeFrom: Optional[int] = None
     timeMode: Optional[str] = 'fixed'
     flexDuration: Optional[int] = 0
     flexPreference: Optional[str] = 'any'
@@ -288,10 +311,13 @@ class Commitment(BaseModel):
     commitmentEnd: Optional[str] = None
     commitmentType: Optional[str] = None
     commuteTime: Optional[int] = 0
+    commuteTimeTo: Optional[int] = None
+    commuteTimeFrom: Optional[int] = None
     timeMode: Optional[str] = 'fixed'
     flexDuration: Optional[int] = 0
     flexPreference: Optional[str] = 'any'
     days: Optional[str] = ''
+    specificDate: Optional[str] = None
 
 class SleepSchedule(BaseModel):
     wakeTime: str
@@ -731,12 +757,14 @@ def get_meals(user_id: int = Depends(get_current_user)):
 def add_meal(meal: Meal, user_id: int = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
+    commute_to = meal.commuteTimeTo if meal.commuteTimeTo is not None else meal.commuteTime
+    commute_from = meal.commuteTimeFrom if meal.commuteTimeFrom is not None else meal.commuteTime
     cur.execute(
         """INSERT INTO meals
-        (user_id, mealName, mealStart, mealEnd, commuteTime, timeMode, flexDuration, flexPreference)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (user_id, mealName, mealStart, mealEnd, commuteTime, commuteTimeTo, commuteTimeFrom, timeMode, flexDuration, flexPreference)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime,
-        meal.timeMode, meal.flexDuration, meal.flexPreference)
+        commute_to, commute_from, meal.timeMode, meal.flexDuration, meal.flexPreference)
     )
     result = cur.fetchone()
     conn.commit()
@@ -748,12 +776,16 @@ def add_meal(meal: Meal, user_id: int = Depends(get_current_user)):
 def update_meal(meal_id: int, meal: Meal, user_id: int = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
+    commute_to = meal.commuteTimeTo if meal.commuteTimeTo is not None else meal.commuteTime
+    commute_from = meal.commuteTimeFrom if meal.commuteTimeFrom is not None else meal.commuteTime
     cur.execute(
         """UPDATE meals SET mealName = %s, mealStart = %s, mealEnd = %s,
-        commuteTime = %s, timeMode = %s, flexDuration = %s, flexPreference = %s
+        commuteTime = %s, commuteTimeTo = %s, commuteTimeFrom = %s,
+        timeMode = %s, flexDuration = %s, flexPreference = %s
         WHERE id = %s AND user_id = %s RETURNING *""",
         (meal.mealName, meal.mealStart, meal.mealEnd, meal.commuteTime,
-        meal.timeMode, meal.flexDuration, meal.flexPreference, meal_id, user_id)
+        commute_to, commute_from, meal.timeMode, meal.flexDuration, meal.flexPreference,
+        meal_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()
@@ -814,15 +846,17 @@ def get_commitments(user_id: int = Depends(get_current_user)):
 @app.post("/commitments")
 def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_user)):
     conn = get_db()
-    cur = conn.cursor()
+    cc_to = commitment.commuteTimeTo if commitment.commuteTimeTo is not None else commitment.commuteTime
+    c_from = commitment.commuteTimeFrom if commitment.commuteTimeFrom is not None else commitment.commuteTime
     cur.execute(
         """INSERT INTO commitments
         (user_id, commitmentName, commitmentStart, commitmentEnd, commitmentType,
-        commuteTime, timeMode, flexDuration, flexPreference, days)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        commuteTime, commuteTimeTo, commuteTimeFrom, timeMode, flexDuration, flexPreference, days, specificDate)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
-        commitment.commitmentType, commitment.commuteTime,
-        commitment.timeMode, commitment.flexDuration, commitment.flexPreference, commitment.days)
+        commitment.commitmentType, commitment.commuteTime, c_to, c_from,
+        commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
+        commitment.days, commitment.specificDate)
     )
     result = cur.fetchone()
     conn.commit()
@@ -834,15 +868,19 @@ def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_us
 def update_commitment(commitment_id: int, commitment: Commitment, user_id: int = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
+    c_to = commitment.commuteTimeTo if commitment.commuteTimeTo is not None else commitment.commuteTime
+    c_from = commitment.commuteTimeFrom if commitment.commuteTimeFrom is not None else commitment.commuteTime
     cur.execute(
         """UPDATE commitments SET commitmentName = %s, commitmentStart = %s,
         commitmentEnd = %s, commitmentType = %s, commuteTime = %s,
-        timeMode = %s, flexDuration = %s, flexPreference = %s, days = %s
+        commuteTimeTo = %s, commuteTimeFrom = %s,
+        timeMode = %s, flexDuration = %s, flexPreference = %s, days = %s,
+        specificDate = %s
         WHERE id = %s AND user_id = %s RETURNING *""",
         (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
-        commitment.commitmentType, commitment.commuteTime,
+        commitment.commitmentType, commitment.commuteTime, c_to, c_from,
         commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
-        commitment.days, commitment_id, user_id)
+        commitment.days, commitment.specificDate, commitment_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()

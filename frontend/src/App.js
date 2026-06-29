@@ -199,6 +199,8 @@ function App() {
   const [mealStart, setMealStart] = useState('');
   const [mealEnd, setMealEnd] = useState('');
   const [mealCommuteTime, setMealCommuteTime] = useState(0);
+  const [mealCommuteTimeTo, setMealCommuteTimeTo] = useState(0);
+  const [mealCommuteTimeFrom, setMealCommuteTimeFrom] = useState(0);
   const [mealTimeMode, setMealTimeMode] = useState('fixed');
   const [mealFlexDuration, setMealFlexDuration] = useState(30);
   const [mealFlexPreference, setMealFlexPreference] = useState('any');
@@ -209,6 +211,8 @@ function App() {
   const [editMealStart, setEditMealStart] = useState('');
   const [editMealEnd, setEditMealEnd] = useState('');
   const [editMealCommuteTime, setEditMealCommuteTime] = useState(0);
+  const [editMealCommuteTimeTo, setEditMealCommuteTimeTo] = useState(0);
+  const [editMealCommuteTimeFrom, setEditMealCommuteTimeFrom] = useState(0);
   const [editMealTimeMode, setEditMealTimeMode] = useState('fixed');
   const [editMealFlexDuration, setEditMealFlexDuration] = useState(30);
   const [editMealFlexPreference, setEditMealFlexPreference] = useState('any');
@@ -224,6 +228,8 @@ function App() {
   const [commitmentEnd, setCommitmentEnd] = useState('');
   const [commitmentType, setCommitmentType] = useState('');
   const [commuteTime, setCommuteTime] = useState(0);
+  const [commuteTimeTo, setCommuteTimeTo] = useState(0);
+  const [commuteTimeFrom, setCommuteTimeFrom] = useState(0);
   const [commitmentTimeMode, setCommitmentTimeMode] = useState('fixed');
   const [commitmentFlexDuration, setCommitmentFlexDuration] = useState(60);
   const [commitmentFlexPreference, setCommitmentFlexPreference] = useState('any');
@@ -238,6 +244,8 @@ function App() {
   const [editCommitmentEnd, setEditCommitmentEnd] = useState('');
   const [editCommitmentType, setEditCommitmentType] = useState('');
   const [editCommitmentCommuteTime, setEditCommitmentCommuteTime] = useState(0);
+  const [editCommitmentCommuteTimeTo, setEditCommitmentCommuteTimeTo] = useState(0);
+  const [editCommitmentCommuteTimeFrom, setEditCommitmentCommuteTimeFrom] = useState(0);
   const [editCommitmentTimeMode, setEditCommitmentTimeMode] = useState('fixed');
   const [editCommitmentFlexDuration, setEditCommitmentFlexDuration] = useState(60);
   const [editCommitmentFlexPreference, setEditCommitmentFlexPreference] = useState('any');
@@ -607,13 +615,14 @@ function App() {
     if (sleepTime) {
       blocks.push({ label: 'Sleep', start: sleepTime, end: '23:59', category: 'sleep', location: null });
     }
+    const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment' };
     generatedSchedule.forEach((block) => {
       if (['study', 'peak', 'break', 'buffer', 'shower'].includes(block.type)) {
         blocks.push({
           label: block.label,
           start: block.start,
           end: block.end,
-          category: getCategoryFromName(block.label),
+          category: typeToCategory[block.type] || getCategoryFromName(block.label),
           location: null,
         });
       }
@@ -1072,10 +1081,14 @@ function App() {
         }
         const start = meal.actual_start || meal.mealStart;
         const end = meal.actual_end || meal.mealEnd;
+        const mealTo = meal.commuteTimeTo ?? meal.commuteTime ?? 0;
+        const mealFrom = meal.commuteTimeFrom ?? meal.commuteTime ?? 0;
         const blocks = [{ start: toMinutes(start), end: toMinutes(end), label: meal.mealName, type: 'meal' }];
-        if (meal.commuteTime > 0) {
-          blocks.unshift({ start: toMinutes(start) - meal.commuteTime, end: toMinutes(start), label: `Commute to ${meal.mealName}`, type: 'commute' });
-          blocks.push({ start: toMinutes(end), end: toMinutes(end) + meal.commuteTime, label: `Commute back from ${meal.mealName}`, type: 'commute' });
+        if (mealTo > 0) {
+          blocks.unshift({ start: toMinutes(start) - mealTo, end: toMinutes(start), label: `Commute to ${meal.mealName}`, type: 'commute' });
+        }
+        if (mealFrom > 0) {
+          blocks.push({ start: toMinutes(end), end: toMinutes(end) + mealFrom, label: `Commute back from ${meal.mealName}`, type: 'commute' });
         }
         return blocks;
       }),
@@ -1095,10 +1108,14 @@ function App() {
             return []; 
           }
         }
+        const cTo = commitment.commuteTimeTo ?? commitment.commuteTime ?? 0;
+        const cFrom = commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0;
         const blocks = [{ start: toMinutes(commitment.commitmentStart), end: toMinutes(commitment.commitmentEnd), label: commitment.commitmentName, type: 'commitment' }];
-        if (commitment.commuteTime > 0) {
-          blocks.unshift({ start: toMinutes(commitment.commitmentStart) - commitment.commuteTime, end: toMinutes(commitment.commitmentStart), label: `Commute to ${commitment.commitmentName}`, type: 'commute' });
-          blocks.push({ start: toMinutes(commitment.commitmentEnd), end: toMinutes(commitment.commitmentEnd) + commitment.commuteTime, label: `Commute back from ${commitment.commitmentName}`, type: 'commute' });
+        if (cTo > 0) {
+          blocks.unshift({ start: toMinutes(commitment.commitmentStart) - cTo, end: toMinutes(commitment.commitmentStart), label: `Commute to ${commitment.commitmentName}`, type: 'commute' });
+        }
+        if (cFrom > 0) {
+          blocks.push({ start: toMinutes(commitment.commitmentEnd), end: toMinutes(commitment.commitmentEnd) + cFrom, label: `Commute back from ${commitment.commitmentName}`, type: 'commute' });
         }
         return blocks;
       })
@@ -1186,20 +1203,20 @@ function App() {
       return start < blockEnd + 300 && end > blockStart - 300;
     });
 
-    const placeFlexBlock = (label, dur, preference, type, commute = 0) => {
-      const totalDuration = dur + (commute * 2);
+    const placeFlexBlock = (label, dur, preference, type, commuteTo = 0, commuteFrom = 0) => {
+      const totalDuration = dur + commuteTo + commuteFrom;
       const window = getPreferenceWindow(preference);
       const windowStart = Math.max(wake, window.start);
       const windowEnd = Math.min(sleep, window.end);
       let start = getNextFreeStart(windowStart);
 
       const tryPlace = (t) => {
-        if (commute > 0) {
-          schedule.push({ start: toTimeString(t), end: toTimeString(t + commute), label: `Commute to ${label}`, type: 'commute' });
+        if (commuteTo > 0) {
+          schedule.push({ start: toTimeString(t), end: toTimeString(t + commuteTo), label: `Commute to ${label}`, type: 'commute' });
         }
-        schedule.push({ start: toTimeString(t + commute), end: toTimeString(t + commute + dur), label, type });
-        if (commute > 0) {
-          schedule.push({ start: toTimeString(t + commute + dur), end: toTimeString(t + totalDuration), label: `Commute back from ${label}`, type: 'commute' });
+        schedule.push({ start: toTimeString(t + commuteTo), end: toTimeString(t + commuteTo + dur), label, type });
+        if (commuteFrom > 0) {
+          schedule.push({ start: toTimeString(t + commuteTo + dur), end: toTimeString(t + totalDuration), label: `Commute back from ${label}`, type: 'commute' });
         }
       };
 
@@ -1233,7 +1250,7 @@ function App() {
     // Place flexible meals and commitments
     for (const meal of meals) {
       if (meal.timeMode === 'flexible' && meal.flexDuration > 0) {
-        placeFlexBlock(meal.mealName, meal.flexDuration, meal.flexPreference || 'any', 'meal', meal.commuteTime || 0);
+        placeFlexBlock(meal.mealName, meal.flexDuration, meal.flexPreference || 'any', 'meal', meal.commuteTimeTo ?? meal.commuteTime ?? 0, meal.commuteTimeFrom ?? meal.commuteTime ?? 0);
       }
     }
     for (const commitment of commitments) {
@@ -1244,7 +1261,7 @@ function App() {
             continue;
           }
         }
-        placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTime || 0);
+        placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTimeTo ?? commitment.commuteTime ?? 0, commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0);      
       }
     }
 
@@ -1682,12 +1699,13 @@ function App() {
     }
     authFetch(`${process.env.REACT_APP_API_URL}/meals`, {
       method: 'POST',
-      body: JSON.stringify({ mealName: mealName.trim(), mealStart: mealTimeMode === 'fixed' ? mealStart : null, mealEnd: mealTimeMode === 'fixed' ? mealEnd : null, commuteTime: mealCommuteTime, timeMode: mealTimeMode, flexDuration: mealFlexDuration, flexPreference: mealFlexPreference })
+      body: JSON.stringify({ mealName: mealName.trim(), mealStart: mealTimeMode === 'fixed' ? mealStart : null, mealEnd: mealTimeMode === 'fixed' ? mealEnd : null, commuteTime: mealCommuteTime, commuteTimeTo: mealCommuteTimeTo, commuteTimeFrom: mealCommuteTimeFrom, timeMode: mealTimeMode, flexDuration: mealFlexDuration, flexPreference: mealFlexPreference })
     })
       .then((res) => res.json())
       .then((savedMeal) => {
         setMeals([...meals, savedMeal]);
         setMealName(''); setMealStart(''); setMealEnd(''); setMealCommuteTime(0);
+        setMealCommuteTimeTo(0); setMealCommuteTimeFrom(0);
         setMealTimeMode('fixed'); setMealFlexDuration(30); setMealFlexPreference('any');
       })
       .catch((err) => console.error('Failed to add meal:', err));
@@ -1700,16 +1718,22 @@ function App() {
   }
 
   function handleEditMeal(meal) {
-    setEditingMealId(meal.id); setEditMealName(meal.mealName); setEditMealStart(meal.mealStart || '');
-    setEditMealEnd(meal.mealEnd || ''); setEditMealCommuteTime(meal.commuteTime || 0);
-    setEditMealTimeMode(meal.timeMode || 'fixed'); setEditMealFlexDuration(meal.flexDuration || 30);
+    setEditingMealId(meal.id); 
+    setEditMealName(meal.mealName); 
+    setEditMealStart(meal.mealStart || '');
+    setEditMealEnd(meal.mealEnd || ''); 
+    setEditMealCommuteTime(meal.commuteTime || 0);
+    setEditMealCommuteTimeTo(meal.commuteTimeTo ?? meal.commuteTime ?? 0);
+    setEditMealCommuteTimeFrom(meal.commuteTimeFrom ?? meal.commuteTime ?? 0);
+    setEditMealTimeMode(meal.timeMode || 'fixed'); 
+    setEditMealFlexDuration(meal.flexDuration || 30);
     setEditMealFlexPreference(meal.flexPreference || 'any');
   }
 
   function handleUpdateMeal(mealId) {
     authFetch(`${process.env.REACT_APP_API_URL}/meals/${mealId}`, {
       method: 'PUT',
-      body: JSON.stringify({ mealName: editMealName, mealStart: editMealTimeMode === 'fixed' ? editMealStart : null, mealEnd: editMealTimeMode === 'fixed' ? editMealEnd : null, commuteTime: editMealCommuteTime, timeMode: editMealTimeMode, flexDuration: editMealFlexDuration, flexPreference: editMealFlexPreference })
+      body: JSON.stringify({ mealName: editMealName, mealStart: editMealTimeMode === 'fixed' ? editMealStart : null, mealEnd: editMealTimeMode === 'fixed' ? editMealEnd : null, commuteTime: editMealCommuteTime, commuteTimeTo: editMealCommuteTimeTo, commuteTimeFrom: editMealCommuteTimeFrom, timeMode: editMealTimeMode, flexDuration: editMealFlexDuration, flexPreference: editMealFlexPreference })
     })
       .then((res) => res.json())
       .then((saved) => { 
@@ -1767,15 +1791,24 @@ function App() {
     }
     authFetch(`${process.env.REACT_APP_API_URL}/commitments`, {
       method: 'POST',
-      body: JSON.stringify({ commitmentName: commitmentName.trim(), commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null, commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null, commitmentType, commuteTime, timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference, days: commitmentScheduleType === 'recurring' ? commitmentDays.join(',') : '', specificDate: commitmentScheduleType === 'specific' ? commitmentSpecificDate : null })
+      body: JSON.stringify({ commitmentName: commitmentName.trim(), commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null, commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null, commitmentType, commuteTime, commuteTimeTo, commuteTimeFrom, timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference, days: commitmentScheduleType === 'recurring' ? commitmentDays.join(',') : '', specificDate: commitmentScheduleType === 'specific' ? commitmentSpecificDate : null })
     })
       .then((res) => res.json())
       .then((savedCommitment) => {
         setCommitments([...commitments, savedCommitment]);
-        setCommitmentName(''); setCommitmentStart(''); setCommitmentEnd(''); setCommitmentType('');
-        setCommuteTime(0); setCommitmentTimeMode('fixed'); setCommitmentFlexDuration(60);
-        setCommitmentFlexPreference('any'); setCommitmentDays([]);
-        setCommitmentScheduleType('recurring'); setCommitmentSpecificDate('');
+        setCommitmentName(''); 
+        setCommitmentStart(''); 
+        setCommitmentEnd(''); 
+        setCommitmentType('');
+        setCommuteTime(0); 
+        setCommuteTimeTo(0); 
+        setCommuteTimeFrom(0);
+        setCommitmentTimeMode('fixed'); 
+        setCommitmentFlexDuration(60);
+        setCommitmentFlexPreference('any'); 
+        setCommitmentDays([]);
+        setCommitmentScheduleType('recurring'); 
+        setCommitmentSpecificDate('');
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -1787,10 +1820,16 @@ function App() {
   }
 
   function handleEditCommitment(commitment) {
-    setEditingCommitmentId(commitment.id); setEditCommitmentName(commitment.commitmentName);
-    setEditCommitmentStart(commitment.commitmentStart || ''); setEditCommitmentEnd(commitment.commitmentEnd || '');
-    setEditCommitmentType(commitment.commitmentType || ''); setEditCommitmentCommuteTime(commitment.commuteTime || 0);
-    setEditCommitmentTimeMode(commitment.timeMode || 'fixed'); setEditCommitmentFlexDuration(commitment.flexDuration || 60);
+    setEditingCommitmentId(commitment.id); 
+    setEditCommitmentName(commitment.commitmentName);
+    setEditCommitmentStart(commitment.commitmentStart || ''); 
+    setEditCommitmentEnd(commitment.commitmentEnd || '');
+    setEditCommitmentType(commitment.commitmentType || ''); 
+    setEditCommitmentCommuteTime(commitment.commuteTime || 0);
+    setEditCommitmentCommuteTimeTo(commitment.commuteTimeTo ?? commitment.commuteTime ?? 0);
+    setEditCommitmentCommuteTimeFrom(commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0);
+    setEditCommitmentTimeMode(commitment.timeMode || 'fixed'); 
+    setEditCommitmentFlexDuration(commitment.flexDuration || 60);
     setEditCommitmentFlexPreference(commitment.flexPreference || 'any');
     setEditCommitmentDays(commitment.days ? commitment.days.split(',').filter(Boolean) : []);
     setEditCommitmentScheduleType(commitment.specificDate ? 'specific' : 'recurring');
@@ -1800,7 +1839,7 @@ function App() {
   function handleUpdateCommitment(commitmentId) {
     authFetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
       method: 'PUT',
-      body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentScheduleType === 'recurring' ? editCommitmentDays.join(',') : '', specificDate: editCommitmentScheduleType === 'specific' ? editCommitmentSpecificDate : null })
+      body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, commuteTimeTo: editCommitmentCommuteTimeTo, commuteTimeFrom: editCommitmentCommuteTimeFrom, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentScheduleType === 'recurring' ? editCommitmentDays.join(',') : '', specificDate: editCommitmentScheduleType === 'specific' ? editCommitmentSpecificDate : null })
     })
       .then((res) => res.json())
       .then((saved) => { 
@@ -2807,8 +2846,10 @@ function App() {
                 <FlexPreferenceSelect value={mealFlexPreference} onChange={setMealFlexPreference} />
               </>
             )}
-            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute time (min, optional)</label>
-            <input type="number" min="0" max="120" value={mealCommuteTime} onChange={(e) => setMealCommuteTime(Number(e.target.value))} />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to meal (min)</label>
+            <input type="number" min="0" max="120" value={mealCommuteTimeTo} onChange={(e) => setMealCommuteTimeTo(Number(e.target.value))} />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from meal (min)</label>
+            <input type="number" min="0" max="120" value={mealCommuteTimeFrom} onChange={(e) => setMealCommuteTimeFrom(Number(e.target.value))} />
             <button className="btn-primary" type="button" onClick={handleAddMeal}>Add meal</button>
           </div>
           {meals.map((meal) => (
@@ -2831,6 +2872,10 @@ function App() {
                       <FlexPreferenceSelect value={editMealFlexPreference} onChange={setEditMealFlexPreference} />
                     </>
                   )}
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to meal (min)</label>
+                  <input type="number" min="0" max="120" value={editMealCommuteTimeTo} onChange={(e) => setEditMealCommuteTimeTo(Number(e.target.value))} />
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from meal (min)</label>
+                  <input type="number" min="0" max="120" value={editMealCommuteTimeFrom} onChange={(e) => setEditMealCommuteTimeFrom(Number(e.target.value))} />
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-primary" type="button" onClick={() => handleUpdateMeal(meal.id)} style={{ flex: 1 }}>Save</button>
                     <button className="btn-secondary" type="button" onClick={() => setEditingMealId(null)} style={{ flex: 1 }}>Cancel</button>
@@ -2913,8 +2958,10 @@ function App() {
                 <input type="date" value={commitmentSpecificDate} onChange={(e) => setCommitmentSpecificDate(e.target.value)} />
               </>
             )}
-            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute time (min, optional)</label>
-            <input type="number" min="0" max="120" value={commuteTime} onChange={(e) => setCommuteTime(Number(e.target.value))} />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to commitment (min)</label>
+            <input type="number" min="0" max="120" value={commuteTimeTo} onChange={(e) => setCommuteTimeTo(Number(e.target.value))} />
+            <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from commitment (min)</label>
+            <input type="number" min="0" max="120" value={commuteTimeFrom} onChange={(e) => setCommuteTimeFrom(Number(e.target.value))} />
             <button className="btn-primary" type="button" onClick={handleAddCommitment}>Add commitment</button>
           </div>
           {commitments.map((commitment) => (
@@ -2977,6 +3024,10 @@ function App() {
                       <input type="date" value={editCommitmentSpecificDate} onChange={(e) => setEditCommitmentSpecificDate(e.target.value)} />
                     </>
                   )}
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to commitment (min)</label>
+                  <input type="number" min="0" max="120" value={editCommitmentCommuteTimeTo} onChange={(e) => setEditCommitmentCommuteTimeTo(Number(e.target.value))} />
+                  <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from commitment (min)</label>
+                  <input type="number" min="0" max="120" value={editCommitmentCommuteTimeFrom} onChange={(e) => setEditCommitmentCommuteTimeFrom(Number(e.target.value))} />
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-primary" type="button" onClick={() => handleUpdateCommitment(commitment.id)} style={{ flex: 1 }}>Save</button>
                     <button className="btn-secondary" type="button" onClick={() => setEditingCommitmentId(null)} style={{ flex: 1 }}>Cancel</button>
