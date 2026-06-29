@@ -211,7 +211,7 @@
 }
 
 .time-gutter-label {
-  font-size: 8px;
+  font-size: calc(var(--font-size-base, 16px) * 0.65);
   font-weight: 600;
   color: var(--text-muted);
   text-align: right;
@@ -227,7 +227,7 @@
   border-radius: var(--radius-md);
   border: 1.5px solid var(--border-color);
   position: relative;
-  min-height: 1020px;
+  min-height: 2400px;
 }
 
 .day-column.today-col {
