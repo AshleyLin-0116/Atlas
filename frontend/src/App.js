@@ -609,15 +609,17 @@ function App() {
         });
       }
     });
-    if (wakeTime) {
-      blocks.push({ label: 'Sleep', start: '00:00', end: wakeTime, category: 'sleep', location: null });
+    if (generatedSchedule.length === 0) {
+      if (wakeTime) {
+        blocks.push({ label: 'Sleep', start: '00:00', end: wakeTime, category: 'sleep', location: null });
+      }
+      if (sleepTime) {
+        blocks.push({ label: 'Sleep', start: sleepTime, end: '23:59', category: 'sleep', location: null });
+      }
     }
-    if (sleepTime) {
-      blocks.push({ label: 'Sleep', start: sleepTime, end: '23:59', category: 'sleep', location: null });
-    }
-    const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment' };
+    const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment', sleep: 'sleep' };
     generatedSchedule.forEach((block) => {
-      if (['study', 'peak', 'break', 'buffer', 'shower'].includes(block.type)) {
+      if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep'].includes(block.type)) {
         blocks.push({
           label: block.label,
           start: block.start,
@@ -1061,12 +1063,12 @@ function App() {
     const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
     let sleep = toMinutes(effectiveSleep);
-    if (sleep === 0) { 
-      sleep = 1440; 
+    if (sleep === 0) {
+      sleep = 1440;
     }
     sleep = sleep - savedNightBuffer;
-    if (sleep <= toMinutes(effectiveWake)) {
-      sleep += 1440;
+    if (sleep < wake) {
+      sleep = wake;
     }
 
     const blockedRanges = [
@@ -1136,11 +1138,15 @@ function App() {
     blockedRanges.sort((a, b) => a.start - b.start);
 
     const schedule = [];
-    schedule.push({ start: toTimeString(toMinutes(effectiveWake)), end: toTimeString(wake), label: 'Morning routine', type: 'buffer' });
-    for (const range of blockedRanges) schedule.push({ start: toTimeString(range.start), end: toTimeString(range.end), label: range.label, type: range.type });
-    const windDownStart = toMinutes(effectiveSleep) === 0 ? 1440 - savedNightBuffer : toMinutes(effectiveSleep) - savedNightBuffer;
-    const windDownEnd = toMinutes(effectiveSleep) === 0 ? 1440 : toMinutes(effectiveSleep);
-    schedule.push({ start: toTimeString(windDownStart), end: toTimeString(windDownEnd), label: 'Wind down', type: 'buffer' });
+    if (savedMorningBuffer > 0) {
+      schedule.push({ start: toTimeString(toMinutes(effectiveWake)), end: toTimeString(wake), label: 'Morning routine', type: 'buffer' });
+    }
+    for (const range of blockedRanges) {
+      schedule.push({ start: toTimeString(range.start), end: toTimeString(range.end), label: range.label, type: range.type });
+    }
+    if (savedNightBuffer > 0) {
+      schedule.push({ start: toTimeString(sleep), end: toTimeString(sleep + savedNightBuffer), label: 'Wind down', type: 'buffer' });
+    }
 
     const getPeakHours = () => {
       if (savedEnergyPattern === 'morning') {
@@ -1339,6 +1345,12 @@ function App() {
           currentTime += savedTransitionGap;
         }
       }
+    }
+
+    // Add sleep blocks
+    schedule.push({ start: '00:00', end: toTimeString(toMinutes(effectiveWake)), label: 'Sleep', type: 'sleep' });
+    if (toMinutes(effectiveSleep) > 0) {
+      schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
     }
 
     // Sort and merge consecutive commute blocks
