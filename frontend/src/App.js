@@ -848,10 +848,13 @@ function App() {
     const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
     let sleep = toMinutes(effectiveSleep);
-    if (sleep === 0) { 
-      sleep = 1440; 
+    if (sleep === 0) {
+      sleep = 1440;
     }
     sleep = sleep - savedNightBuffer;
+    if (sleep < 0) {
+      sleep = 0;
+    }
     if (sleep <= toMinutes(effectiveWake)) {
       sleep += 1440;
     }
@@ -1055,11 +1058,11 @@ function App() {
       const [h, m] = time.split(':').map(Number); 
       return h * 60 + m; 
     };
-    const toTimeString = (minutes) => { 
-      const wrapped = minutes % 1440; 
-      const h = Math.floor(wrapped / 60); 
-      const m = wrapped % 60; 
-      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`; 
+    const toTimeString = (minutes) => {
+      const wrapped = ((minutes % 1440) + 1440) % 1440;
+      const h = Math.floor(wrapped / 60);
+      const m = wrapped % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
     const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
     const effectiveWake = wakeTime;
@@ -1143,7 +1146,9 @@ function App() {
     const schedule = [];
     schedule.push({ start: toTimeString(toMinutes(effectiveWake)), end: toTimeString(wake), label: 'Morning routine', type: 'buffer' });
     for (const range of blockedRanges) schedule.push({ start: toTimeString(range.start), end: toTimeString(range.end), label: range.label, type: range.type });
-    schedule.push({ start: toTimeString(toMinutes(effectiveSleep) - savedNightBuffer), end: toTimeString(toMinutes(effectiveSleep)), label: 'Wind down', type: 'buffer' });
+    const windDownStart = toMinutes(effectiveSleep) === 0 ? 1440 - savedNightBuffer : toMinutes(effectiveSleep) - savedNightBuffer;
+    const windDownEnd = toMinutes(effectiveSleep) === 0 ? 1440 : toMinutes(effectiveSleep);
+    schedule.push({ start: toTimeString(windDownStart), end: toTimeString(windDownEnd), label: 'Wind down', type: 'buffer' });
 
     const getPeakHours = () => {
       if (savedEnergyPattern === 'morning') {
