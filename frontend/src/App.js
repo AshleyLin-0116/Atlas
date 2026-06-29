@@ -1163,7 +1163,12 @@ function App() {
     const peakHours = getPeakHours();
     const isInPeak = (time) => peakHours ? time >= peakHours.start && time < peakHours.end : false;
 
-    const isOccupied = (start, end) => schedule.some((block) => start < toMinutes(block.end) && end > toMinutes(block.start));
+    const blockToMin = (timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      const raw = h * 60 + m;
+      return raw < toMinutes(effectiveWake) - 60 ? raw + 1440 : raw;
+    };
+    const isOccupied = (start, end) => schedule.some((block) => start < blockToMin(block.end) && end > blockToMin(block.start));
     const getNextFreeStart = (from) => {
       let time = from; let safetyCounter = 0;
       while (safetyCounter < 1000) {
@@ -1290,7 +1295,7 @@ function App() {
       const { multiplier } = getTaskMultiplier(task);
       let remaining = Math.round(Number(task.duration) * multiplier);
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
-      const isOccupiedAt = (s, e) => schedule.some((b) => s < toMinutes(b.end) && e > toMinutes(b.start));
+      const isOccupiedAt = (s, e) => schedule.some((b) => s < blockToMin(b.end) && e > blockToMin(b.start));
 
       const findPeakStart = (duration) => {
         if (!peakHours) {
@@ -1322,12 +1327,14 @@ function App() {
         if (currentTime >= sleep) {
           break;
         }
-        let blockEnd = currentTime + Math.min(remaining, limit);
-        while (blockEnd > currentTime && isOccupiedAt(currentTime, blockEnd)) blockEnd--;
+        let blockEnd = Math.min(currentTime + Math.min(remaining, limit), sleep);
+        while (blockEnd > currentTime && isOccupiedAt(currentTime, blockEnd)) {
+          blockEnd--;
+        }
         const blockSize = blockEnd - currentTime;
-        if (blockSize <= 0) { 
-          currentTime++; 
-          continue; 
+        if (blockSize <= 0) {
+          currentTime++;
+          continue;
         }
         schedule.push({ start: toTimeString(currentTime), end: toTimeString(blockEnd), label: task.taskName, type: isInPeak(currentTime) ? 'peak' : 'study', taskType: task.taskType });
         remaining -= blockSize;
@@ -1335,9 +1342,10 @@ function App() {
         if (remaining > 0) {
           const breakLength = Math.max(15, Math.round(blockSize * 0.15));
           const breakEnd = currentTime + breakLength;
-          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd <= sleep) {
-            schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
-            currentTime = breakEnd + savedTransitionGap;
+          const clampedBreakEnd = Math.min(breakEnd, sleep);
+          if (!isOccupiedAt(currentTime, clampedBreakEnd) && clampedBreakEnd <= sleep && clampedBreakEnd > currentTime) {
+            schedule.push({ start: toTimeString(currentTime), end: toTimeString(clampedBreakEnd), label: 'Break', type: 'break' });
+            currentTime = clampedBreakEnd + savedTransitionGap;
           } else {
             currentTime = getNextFreeStart(currentTime);
           }
