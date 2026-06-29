@@ -2887,7 +2887,7 @@ function App() {
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {meal.timeMode === 'flexible'
                       ? `Flexible · ${meal.flexDuration} min`
-                      : `${formatTime(meal.mealStart)} – ${formatTime(meal.mealEnd)}`}
+                      : `${formatTime(meal.mealStart)} - ${formatTime(meal.mealEnd)}`}
                   </p>
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button className="btn-secondary" type="button" onClick={() => handleEditMeal(meal)} style={{ flex: 1 }}>Edit</button>
@@ -3040,7 +3040,11 @@ function App() {
                     {commitment.timeMode === 'flexible'
                       ? `Flexible · ${commitment.flexDuration} min`
                       : `${formatTime(commitment.commitmentStart)} – ${formatTime(commitment.commitmentEnd)}`}
-                    {commitment.days && commitment.days.length > 0 && ` · ${commitment.days.split(',').filter(Boolean).map((d) => d.slice(0,3)).join(', ')}`}
+                    {commitment.specificDate
+                      ? ` · ${new Date(commitment.specificDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                      : commitment.days && commitment.days.length > 0
+                        ? ` · ${commitment.days.split(',').filter(Boolean).map((d) => d.slice(0,3)).join(', ')}`
+                        : ''}
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-secondary" type="button" onClick={() => handleEditCommitment(commitment)} style={{ flex: 1 }}>Edit</button>
