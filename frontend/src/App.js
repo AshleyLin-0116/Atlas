@@ -2304,7 +2304,7 @@ function App() {
 
       {/* ── SCHEDULE TAB ── */}
       {activeTab === 'schedule' && (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
 
           {/* View toggle */}
           <div className="view-toggle">
@@ -2341,7 +2341,7 @@ function App() {
 
           {/* ── WEEK VIEW ── */}
           {scheduleView === 'week' && (
-            <div className="schedule-area">
+            <div className="schedule-area" style={{ flex: 1, minHeight: 0 }}>
               <div className="week-grid">
                 <div className="time-gutter">
                   {Array.from({ length: 24 }, (_, i) => {
@@ -2376,7 +2376,7 @@ function App() {
 
           {/* ── DAY VIEW ── */}
           {scheduleView === 'day' && (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
               <div className="day-detail-header">
                 <div className="day-detail-title-row">
                   <button className="back-btn" type="button" onClick={() => setScheduleView('week')}>←</button>
