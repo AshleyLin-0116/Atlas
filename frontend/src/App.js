@@ -1165,8 +1165,7 @@ function App() {
 
     const blockToMin = (timeStr) => {
       const [h, m] = timeStr.split(':').map(Number);
-      const raw = h * 60 + m;
-      return raw < toMinutes(effectiveWake) - 60 ? raw + 1440 : raw;
+      return h * 60 + m;
     };
     const isOccupied = (start, end) => schedule.some((block) => start < blockToMin(block.end) && end > blockToMin(block.start));
     const getNextFreeStart = (from) => {
@@ -1313,9 +1312,13 @@ function App() {
         return null;
       };
 
-      let currentTime = task.taskType === 'deep'
-        ? (findPeakStart(Math.min(Number(task.duration), savedMaxBlockLength)) ?? getNextFreeStart(wake))
-        : getNextFreeStart(wake);
+      let currentTime = getNextFreeStart(wake);
+      if (task.taskType === 'deep') {
+        const peakStart = findPeakStart(Math.min(Number(task.duration), savedMaxBlockLength));
+        if (peakStart !== null) {
+          currentTime = peakStart;
+        }
+      }
 
       let safetyCounter = 0;
       while (remaining > 0 && currentTime < sleep) {
