@@ -114,6 +114,8 @@ function App() {
   const [activeTab, setActiveTab] = useState('schedule');
   const [scheduleView, setScheduleView] = useState('week');
   const [selectedDay, setSelectedDay] = useState(new Date());
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [monthOffset, setMonthOffset] = useState(0);
 
   // eslint-disable-next-line no-unused-vars
   const DEBUG = process.env.NODE_ENV === 'development';
@@ -294,6 +296,7 @@ function App() {
 
   // ── Schedule ──
   const [generatedSchedule, setGeneratedSchedule] = useState([]);
+  const [weekSchedule, setWeekSchedule] = useState({});
   const [scheduleSummary, setScheduleSummary] = useState([]);
   const [scheduleFeedback, setScheduleFeedback] = useState({});
   const [flagInput, setFlagInput] = useState({});
@@ -532,10 +535,10 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   // HELPERS
   // ─────────────────────────────────────────────────────────────────────────────
-  function getWeekDays() {
+  function getWeekDays(offset = weekOffset) {
     const today = new Date();
     const sunday = new Date(today);
-    sunday.setDate(today.getDate() - today.getDay());
+    sunday.setDate(today.getDate() - today.getDay() + offset * 7);
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(sunday);
       d.setDate(sunday.getDate() + i);
@@ -544,13 +547,9 @@ function App() {
   }
 
   function getMonthLabel() {
-    const days = getWeekDays();
-    const start = days[0];
-    const end = days[6];
-    if (start.getMonth() === end.getMonth()) {
-      return start.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
-    return `${start.toLocaleDateString('en-US', { month: 'short' })} – ${end.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
+    const today = new Date();
+    const viewedMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+    return viewedMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   }
 
   function getWeekRangeLabel() {
@@ -609,7 +608,8 @@ function App() {
         });
       }
     });
-    const hasScheduleForDay = generatedSchedule.some((b) => b.generatedForDate === date.toDateString());
+    const dayScheduleBlocks = weekSchedule[date.toDateString()] || [];
+    const hasScheduleForDay = dayScheduleBlocks.length > 0;
     if (!hasScheduleForDay) {
       if (wakeTime) {
         blocks.push({ label: 'Sleep', start: '00:00', end: wakeTime, category: 'sleep', location: null });
@@ -619,11 +619,7 @@ function App() {
       }
     }
     const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment', sleep: 'sleep' };
-    const todayDateStr = new Date().toDateString();
-    generatedSchedule.forEach((block) => {
-      if (block.generatedForDate && block.generatedForDate !== date.toDateString()) {
-        return;
-      }
+    dayScheduleBlocks.forEach((block) => {
       if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep'].includes(block.type)) {
         blocks.push({
           label: block.label,
@@ -1049,7 +1045,7 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
   // SCHEDULE GENERATION
   // ─────────────────────────────────────────────────────────────────────────────
-  function generateSchedule() {
+  function generateSchedule(forDate = new Date()) {
     if (!wakeTime || !sleepTime) {
       return [];
     }
@@ -1063,7 +1059,7 @@ function App() {
       const m = wrapped % 60;
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
     };
-    const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][new Date().getDay()];
+    const todayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][forDate.getDay()];
     const effectiveWake = wakeTime;
     const effectiveSleep = sleepTime;
     const wake = toMinutes(effectiveWake) + savedMorningBuffer;
@@ -1100,8 +1096,7 @@ function App() {
         }
         if (commitment.specificDate) {
           const commitDate = new Date(commitment.specificDate + 'T00:00:00');
-          const today = new Date();
-          if (commitDate.toDateString() !== today.toDateString()) { 
+          if (commitDate.toDateString() !== forDate.toDateString()) { 
             return []; 
           }
         } else if (commitment.days && commitment.days.length > 0) {
@@ -1268,7 +1263,12 @@ function App() {
     }
     for (const commitment of commitments) {
       if (commitment.timeMode === 'flexible' && commitment.flexDuration > 0) {
-        if (commitment.days && commitment.days.length > 0) {
+        if (commitment.specificDate) {
+          const commitDate = new Date(commitment.specificDate + 'T00:00:00');
+          if (commitDate.toDateString() !== forDate.toDateString()) {
+            continue;
+          }
+        } else if (commitment.days && commitment.days.length > 0) {
           const dayList = commitment.days.split(',').filter(Boolean);
           if (!dayList.includes(todayName)) {
             continue;
@@ -1375,7 +1375,7 @@ function App() {
       schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
     }
     // Sort and merge consecutive commute blocks
-    const todayStr = new Date().toDateString();
+    const todayStr = forDate.toDateString();
     const sorted = schedule.sort((a, b) => a.start.localeCompare(b.start));
     const merged = [];
     let i = 0;
@@ -1433,12 +1433,38 @@ function App() {
     return summary;
   }
 
+  function getMonthDays(offset = monthOffset) {
+    const today = new Date();
+    const viewedMonth = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    const year = viewedMonth.getFullYear();
+    const month = viewedMonth.getMonth();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => new Date(year, month, i + 1));
+  }
+
   function handleGenerateSchedule() {
     setScheduleFeedback({});
     setFlagInput({});
-    const schedule = generateSchedule();
-    setGeneratedSchedule(schedule);
-    setScheduleSummary(generateScheduleSummary(schedule));
+    let daysToGenerate = [];
+    if (scheduleView === 'day') {
+      daysToGenerate = [selectedDay];
+    } else if (scheduleView === 'week') {
+      daysToGenerate = getWeekDays();
+    } else {
+      daysToGenerate = getMonthDays();
+    }
+    const newWeekSchedule = { ...weekSchedule };
+    let activeDaySchedule = [];
+    daysToGenerate.forEach((day) => {
+      const daySchedule = generateSchedule(day);
+      newWeekSchedule[day.toDateString()] = daySchedule;
+      if (day.toDateString() === selectedDay.toDateString()) {
+        activeDaySchedule = daySchedule;
+      }
+    });
+    setWeekSchedule(newWeekSchedule);
+    setGeneratedSchedule(activeDaySchedule);
+    setScheduleSummary(generateScheduleSummary(activeDaySchedule));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2353,7 +2379,20 @@ function App() {
           </div>
 
           {/* Week label */}
-          <div className="week-label">{getWeekRangeLabel()}</div>
+          {scheduleView !== 'month' && (
+            <div className="week-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <button type="button" onClick={() => setWeekOffset(weekOffset - 1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 14, padding: '0 8px' }}>←</button>
+              <span>{getWeekRangeLabel()}</span>
+              <button type="button" onClick={() => setWeekOffset(weekOffset + 1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 14, padding: '0 8px' }}>→</button>
+            </div>
+          )}
+          {scheduleView === 'month' && (
+            <div className="week-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <button type="button" onClick={() => setMonthOffset(monthOffset - 1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 14, padding: '0 8px' }}>←</button>
+              <span>{getMonthLabel()}</span>
+              <button type="button" onClick={() => setMonthOffset(monthOffset + 1)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 14, padding: '0 8px' }}>→</button>
+            </div>
+          )}
 
           {/* Day chips */}
           <div className="day-chips-row">
@@ -2507,8 +2546,9 @@ function App() {
                 </div>
                 {(() => {
                   const today = new Date();
-                  const year = today.getFullYear();
-                  const month = today.getMonth();
+                  const viewedMonth = new Date(today.getFullYear(), today.getMonth() + monthOffset, 1);
+                  const year = viewedMonth.getFullYear();
+                  const month = viewedMonth.getMonth();
                   const firstDay = new Date(year, month, 1).getDay();
                   const daysInMonth = new Date(year, month + 1, 0).getDate();
                   const cells = [];
@@ -2566,13 +2606,15 @@ function App() {
           )}
 
           {/* Generate schedule button */}
-          {scheduleView !== 'month' && (
-            <div style={{ padding: '10px 14px 0' }}>
-              <button className="btn-primary" type="button" onClick={handleGenerateSchedule}>
-                Generate today's schedule
-              </button>
-            </div>
-          )}
+          <div style={{ padding: '10px 14px 0' }}>
+            <button className="btn-primary" type="button" onClick={handleGenerateSchedule}>
+              {scheduleView === 'day'
+                ? `Generate ${isToday(selectedDay) ? "today's" : selectedDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} schedule`
+                : scheduleView === 'week'
+                  ? 'Generate this week\'s schedule'
+                  : `Generate ${getMonthLabel()} schedule`}
+            </button>
+          </div>
         </div>
       )}
 
