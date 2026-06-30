@@ -846,15 +846,16 @@ def get_commitments(user_id: int = Depends(get_current_user)):
 @app.post("/commitments")
 def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_user)):
     conn = get_db()
+    cur = conn.cursor()
     cc_to = commitment.commuteTimeTo if commitment.commuteTimeTo is not None else commitment.commuteTime
-    c_from = commitment.commuteTimeFrom if commitment.commuteTimeFrom is not None else commitment.commuteTime
+    cc_from = commitment.commuteTimeFrom if commitment.commuteTimeFrom is not None else commitment.commuteTime
     cur.execute(
         """INSERT INTO commitments
         (user_id, commitmentName, commitmentStart, commitmentEnd, commitmentType,
         commuteTime, commuteTimeTo, commuteTimeFrom, timeMode, flexDuration, flexPreference, days, specificDate)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
-        commitment.commitmentType, commitment.commuteTime, c_to, c_from,
+        commitment.commitmentType, commitment.commuteTime, cc_to, cc_from,
         commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
         commitment.days, commitment.specificDate)
     )

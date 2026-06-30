@@ -1293,7 +1293,10 @@ function App() {
       }
     }
 
-    for (const task of orderedTasks) {
+    let previousTaskType = null;
+
+    for (let taskIndex = 0; taskIndex < orderedTasks.length; taskIndex++) {
+      const task = orderedTasks[taskIndex];
       if (!task.duration || Number(task.duration) <= 0) {
         continue;
       }
@@ -1327,13 +1330,16 @@ function App() {
       }
 
       let safetyCounter = 0;
+      let taskFullyScheduled = true;
       while (remaining > 0 && currentTime < sleep) {
         safetyCounter++;
         if (safetyCounter > 1000) {
+          taskFullyScheduled = false;
           break;
         }
         currentTime = getNextFreeStart(currentTime);
         if (currentTime >= sleep) {
+          taskFullyScheduled = false;
           break;
         }
         const chunkSize = Math.min(remaining, limit);
@@ -1353,23 +1359,47 @@ function App() {
         schedule.push({ start: toTimeString(currentTime), end: toTimeString(blockEnd), label: task.taskName, type: isInPeak(currentTime) ? 'peak' : 'study', taskType: task.taskType });
         remaining -= blockSize;
         currentTime = blockEnd;
-        if (remaining > 0) {
+
+        if (remaining > 0 && task.taskType === 'deep' && blockSize >= limit) {
+          // Hit the max deep-work block length mid-task: still force a break before continuing the SAME task
           const breakLength = Math.max(15, Math.round(blockSize * 0.15));
-          const breakEnd = currentTime + breakLength;
-          const clampedBreakEnd = Math.min(breakEnd, sleep);
-          if (!isOccupiedAt(currentTime, clampedBreakEnd) && clampedBreakEnd <= sleep && clampedBreakEnd > currentTime) {
-            schedule.push({ start: toTimeString(currentTime), end: toTimeString(clampedBreakEnd), label: 'Break', type: 'break' });
-            currentTime = clampedBreakEnd + savedTransitionGap;
+          const breakEnd = Math.min(currentTime + breakLength, sleep);
+          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
+            schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
+            currentTime = breakEnd + savedTransitionGap;
           } else {
             currentTime = getNextFreeStart(currentTime);
           }
+        }
+        // else: keep going immediately, no break needed for light work chunking
+      }
+
+      if (!taskFullyScheduled) {
+        previousTaskType = task.taskType;
+        continue;
+      }
+
+      // Decide whether to insert a break before the NEXT task
+      const nextTask = orderedTasks[taskIndex + 1];
+      if (nextTask) {
+        const switchingTypes = task.taskType !== nextTask.taskType;
+
+        if (!switchingTypes && task.taskType === 'deep') {
+          // Same deep work type back-to-back: insert a break
+          const breakLength = 15;
+          const breakEnd = Math.min(currentTime + breakLength, sleep);
+          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
+            schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
+            currentTime = breakEnd + savedTransitionGap;
+          }
         } else {
+          // Alternating deep/light, or both light: go straight into the next task, just apply transition gap
           currentTime += savedTransitionGap;
         }
       }
-    }
 
-    // Add sleep blocks
+      previousTaskType = task.taskType;
+    }
     schedule.push({ start: '00:00', end: toTimeString(toMinutes(effectiveWake)), label: 'Sleep', type: 'sleep' });
     if (toMinutes(effectiveSleep) > 0) {
       schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
