@@ -575,42 +575,44 @@ function App() {
   function getBlocksForDay(date) {
     const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
     const blocks = [];
-    meals.forEach((meal) => {
-      if (meal.mealStart && meal.mealEnd) {
-        blocks.push({
-          label: meal.mealName,
-          start: meal.actual_start || meal.mealStart,
-          end: meal.actual_end || meal.mealEnd,
-          category: 'meal',
-          location: null,
-        });
-      }
-    });
-    commitments.forEach((commitment) => {
-      if (commitment.commitmentStart && commitment.commitmentEnd) {
-        if (commitment.specificDate) {
-          const commitDate = new Date(commitment.specificDate + 'T00:00:00');
-          if (!isSameDay(commitDate, date)) { 
-            return; 
-          }
-        } else {
-          const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
-          if (days.length > 0 && !days.includes(dayName)) { 
-            return; 
-          }
-        }
-        blocks.push({
-          label: commitment.commitmentName,
-          start: commitment.commitmentStart,
-          end: commitment.commitmentEnd,
-          category: 'commitment',
-          location: null,
-        });
-      }
-    });
     const dayScheduleBlocks = weekSchedule[date.toDateString()] || [];
     const hasScheduleForDay = dayScheduleBlocks.length > 0;
+
     if (!hasScheduleForDay) {
+      // No generated schedule yet: show raw fixed meals/commitments + sleep outlines
+      meals.forEach((meal) => {
+        if (meal.mealStart && meal.mealEnd) {
+          blocks.push({
+            label: meal.mealName,
+            start: meal.actual_start || meal.mealStart,
+            end: meal.actual_end || meal.mealEnd,
+            category: 'meal',
+            location: null,
+          });
+        }
+      });
+      commitments.forEach((commitment) => {
+        if (commitment.commitmentStart && commitment.commitmentEnd) {
+          if (commitment.specificDate) {
+            const commitDate = new Date(commitment.specificDate + 'T00:00:00');
+            if (!isSameDay(commitDate, date)) {
+              return;
+            }
+          } else {
+            const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
+            if (days.length > 0 && !days.includes(dayName)) {
+              return;
+            }
+          }
+          blocks.push({
+            label: commitment.commitmentName,
+            start: commitment.commitmentStart,
+            end: commitment.commitmentEnd,
+            category: 'commitment',
+            location: null,
+          });
+        }
+      });
       if (wakeTime) {
         blocks.push({ label: 'Sleep', start: '00:00', end: wakeTime, category: 'sleep', location: null });
       }
@@ -618,9 +620,10 @@ function App() {
         blocks.push({ label: 'Sleep', start: sleepTime, end: '23:59', category: 'sleep', location: null });
       }
     }
+
     const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment', sleep: 'sleep' };
     dayScheduleBlocks.forEach((block) => {
-      if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep'].includes(block.type)) {
+      if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep', 'meal', 'commitment', 'commute'].includes(block.type)) {
         blocks.push({
           label: block.label,
           start: block.start,
@@ -630,6 +633,7 @@ function App() {
         });
       }
     });
+
     return blocks.sort((a, b) => a.start.localeCompare(b.start));
   }
 
@@ -1278,129 +1282,139 @@ function App() {
       }
     }
 
-    // Place tasks (deep/light interleaved, priority sorted)
-    const sortedTasks = [...tasks].sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
-    const deepTasks = sortedTasks.filter((t) => t.taskType === 'deep' && t.completion_status !== 'Completed' && !isBlocked(t));
-    const lightTasks = sortedTasks.filter((t) => t.taskType === 'light' && t.completion_status !== 'Completed' && !isBlocked(t));
-    const orderedTasks = [];
-    const maxLen = Math.max(deepTasks.length, lightTasks.length);
-    for (let i = 0; i < maxLen; i++) {
-      if (i < deepTasks.length) {
-        orderedTasks.push(deepTasks[i]);
-      }
-      if (i < lightTasks.length) {
-        orderedTasks.push(lightTasks[i]);
-      }
-    }
+    // Place tasks: weighted random selection per work session (urgency + difficulty weighted),
+    // avoiding draining one task to completion before starting another.
+    const availableTasks = tasks.filter((t) => t.completion_status !== 'Completed' && !isBlocked(t) && t.duration && Number(t.duration) > 0);
 
-    let previousTaskType = null;
+    const remainingByTask = {};
+    availableTasks.forEach((t) => {
+      const { multiplier } = getTaskMultiplier(t);
+      remainingByTask[t.id] = Math.round(Number(t.duration) * multiplier);
+    });
 
-    for (let taskIndex = 0; taskIndex < orderedTasks.length; taskIndex++) {
-      const task = orderedTasks[taskIndex];
-      if (!task.duration || Number(task.duration) <= 0) {
-        continue;
-      }
-      const { multiplier } = getTaskMultiplier(task);
-      let remaining = Math.round(Number(task.duration) * multiplier);
-      const limit = task.taskType === 'deep' ? savedMaxBlockLength : Infinity;
-      const isOccupiedAt = (s, e) => schedule.some((b) => s < blockToMin(b.end) && e > blockToMin(b.start));
+    const getTaskWeight = (task) => {
+      // Reuses your existing priority score (urgency, importance, preference, difficulty, consistency)
+      return Math.max(0.1, Number(calculatePriorityScore(task)));
+    };
 
-      const findPeakStart = (duration) => {
-        if (!peakHours) {
-          return null;
-        }
-        const peakStart = Math.max(wake, peakHours.start);
-        const peakEnd = Math.min(sleep, peakHours.end);
-        let t = getNextFreeStart(peakStart);
-        while (t + duration <= peakEnd) {
-          if (!isOccupiedAt(t, t + duration)) {
-            return t;
-          }
-          t++;
-        }
+    const pickWeightedTask = (pool) => {
+      if (pool.length === 0) {
         return null;
-      };
+      }
+      const weights = pool.map(getTaskWeight);
+      const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+      let roll = Math.random() * totalWeight;
+      for (let i = 0; i < pool.length; i++) {
+        roll -= weights[i];
+        if (roll <= 0) {
+          return pool[i];
+        }
+      }
+      return pool[pool.length - 1];
+    };
 
-      let currentTime = getNextFreeStart(wake);
-      if (task.taskType === 'deep') {
-        const peakStart = findPeakStart(Math.min(Number(task.duration), savedMaxBlockLength));
-        if (peakStart !== null) {
+    const isOccupiedAt = (s, e) => schedule.some((b) => s < blockToMin(b.end) && e > blockToMin(b.start));
+
+    const findPeakStart = (duration) => {
+      if (!peakHours) {
+        return null;
+      }
+      const peakStart = Math.max(wake, peakHours.start);
+      const peakEnd = Math.min(sleep, peakHours.end);
+      let t = getNextFreeStart(peakStart);
+      while (t + duration <= peakEnd) {
+        if (!isOccupiedAt(t, t + duration)) {
+          return t;
+        }
+        t++;
+      }
+      return null;
+    };
+
+    let currentTime = getNextFreeStart(wake);
+    let previousTaskId = null;
+    let previousTaskType = null;
+    let safetyCounter = 0;
+
+    while (currentTime < sleep && safetyCounter < 2000) {
+      safetyCounter++;
+      const lastTaskId = previousTaskId;  // snapshot before any function references it
+
+      let pool = availableTasks.filter((t) => remainingByTask[t.id] > 0);
+      if (pool.length === 0) {
+        break;
+      }
+      const poolExcludingPrevious = pool.filter((t) => t.id !== lastTaskId);
+      const selectionPool = poolExcludingPrevious.length > 0 ? poolExcludingPrevious : pool;
+
+      const task = pickWeightedTask(selectionPool);
+      if (!task) {
+        break;
+      }
+
+      const limit = task.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
+      const sessionLength = Math.min(remainingByTask[task.id], limit);
+
+      currentTime = getNextFreeStart(currentTime);
+      if (currentTime >= sleep) {
+        break;
+      }
+
+      // For deep work, prefer placing the FIRST session of the day in peak hours
+      if (task.taskType === 'deep' && previousTaskId === null) {
+        const peakStart = findPeakStart(sessionLength);
+        if (peakStart !== null && peakStart >= currentTime) {
           currentTime = peakStart;
         }
       }
 
-      let safetyCounter = 0;
-      let taskFullyScheduled = true;
-      while (remaining > 0 && currentTime < sleep) {
-        safetyCounter++;
-        if (safetyCounter > 1000) {
-          taskFullyScheduled = false;
-          break;
+      let blockEnd = Math.min(currentTime + sessionLength, sleep);
+      if (isOccupiedAt(currentTime, blockEnd)) {
+        let freeEnd = currentTime;
+        while (freeEnd < blockEnd && !isOccupiedAt(freeEnd, freeEnd + 1)) {
+          freeEnd++;
         }
-        currentTime = getNextFreeStart(currentTime);
-        if (currentTime >= sleep) {
-          taskFullyScheduled = false;
-          break;
-        }
-        const chunkSize = Math.min(remaining, limit);
-        let blockEnd = Math.min(currentTime + chunkSize, sleep);
-        if (isOccupiedAt(currentTime, blockEnd)) {
-          let freeEnd = currentTime;
-          while (freeEnd < blockEnd && !isOccupiedAt(freeEnd, freeEnd + 1)) {
-            freeEnd++;
-          }
-          blockEnd = freeEnd;
-        }
-        const blockSize = blockEnd - currentTime;
-        if (blockSize < 15) {
-          currentTime = getNextFreeStart(blockEnd + 1);
-          continue;
-        }
-        schedule.push({ start: toTimeString(currentTime), end: toTimeString(blockEnd), label: task.taskName, type: isInPeak(currentTime) ? 'peak' : 'study', taskType: task.taskType });
-        remaining -= blockSize;
-        currentTime = blockEnd;
-
-        if (remaining > 0 && task.taskType === 'deep' && blockSize >= limit) {
-          // Hit the max deep-work block length mid-task: still force a break before continuing the SAME task
-          const breakLength = Math.max(15, Math.round(blockSize * 0.15));
-          const breakEnd = Math.min(currentTime + breakLength, sleep);
-          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
-            schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
-            currentTime = breakEnd + savedTransitionGap;
-          } else {
-            currentTime = getNextFreeStart(currentTime);
-          }
-        }
-        // else: keep going immediately, no break needed for light work chunking
+        blockEnd = freeEnd;
       }
+      const blockSize = blockEnd - currentTime;
 
-      if (!taskFullyScheduled) {
-        previousTaskType = task.taskType;
+      if (blockSize < 15) {
+        // No usable room here — try the next free slot rather than looping forever
+        const nextFree = getNextFreeStart(blockEnd + 1);
+        if (nextFree <= currentTime) {
+          break;
+        }
+        currentTime = nextFree;
         continue;
       }
 
-      // Decide whether to insert a break before the NEXT task
-      const nextTask = orderedTasks[taskIndex + 1];
-      if (nextTask) {
-        const switchingTypes = task.taskType !== nextTask.taskType;
+      schedule.push({ start: toTimeString(currentTime), end: toTimeString(blockEnd), label: task.taskName, type: isInPeak(currentTime) ? 'peak' : 'study', taskType: task.taskType });
+      remainingByTask[task.id] -= blockSize;
+      currentTime = blockEnd;
 
-        if (!switchingTypes && task.taskType === 'deep') {
-          // Same deep work type back-to-back: insert a break
-          const breakLength = 15;
-          const breakEnd = Math.min(currentTime + breakLength, sleep);
-          if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
-            schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
-            currentTime = breakEnd + savedTransitionGap;
-          }
+      // Break logic: only force a break if the NEXT session would be the same task,
+      // or if this was a deep-work task hitting its max block length.
+      const switchingTasks = task.id !== previousTaskId;
+      const hitDeepLimit = task.taskType === 'deep' && blockSize >= limit;
+
+      if (!switchingTasks || hitDeepLimit) {
+        const breakLength = Math.max(15, Math.round(blockSize * 0.15));
+        const breakEnd = Math.min(currentTime + breakLength, sleep);
+        if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
+          schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
+          currentTime = breakEnd + savedTransitionGap;
         } else {
-          // Alternating deep/light, or both light: go straight into the next task, just apply transition gap
-          currentTime += savedTransitionGap;
+          currentTime = getNextFreeStart(currentTime);
         }
+      } else {
+        // Alternating to a different task: just a transition gap, no full break needed
+        currentTime += savedTransitionGap;
       }
 
+      previousTaskId = task.id;
       previousTaskType = task.taskType;
     }
-    schedule.push({ start: '00:00', end: toTimeString(toMinutes(effectiveWake)), label: 'Sleep', type: 'sleep' });
+    
     if (toMinutes(effectiveSleep) > 0) {
       schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
     }
