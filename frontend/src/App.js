@@ -300,6 +300,7 @@ function App() {
   const [scheduleSummary, setScheduleSummary] = useState([]);
   const [scheduleFeedback, setScheduleFeedback] = useState({});
   const [flagInput, setFlagInput] = useState({});
+  const [scheduleSuggestions, setScheduleSuggestions] = useState([]);
 
   // ── Task dependencies ──
   const [taskDependencies, setTaskDependencies] = useState([]);
@@ -1315,22 +1316,6 @@ function App() {
 
     const isOccupiedAt = (s, e) => schedule.some((b) => s < blockToMin(b.end) && e > blockToMin(b.start));
 
-    const findPeakStart = (duration) => {
-      if (!peakHours) {
-        return null;
-      }
-      const peakStart = Math.max(wake, peakHours.start);
-      const peakEnd = Math.min(sleep, peakHours.end);
-      let t = getNextFreeStart(peakStart);
-      while (t + duration <= peakEnd) {
-        if (!isOccupiedAt(t, t + duration)) {
-          return t;
-        }
-        t++;
-      }
-      return null;
-    };
-
     let currentTime = getNextFreeStart(wake);
     let previousTaskId = null;
     let previousTaskType = null;
@@ -1355,17 +1340,13 @@ function App() {
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
       const sessionLength = Math.min(remainingByTask[task.id], limit);
 
-      currentTime = getNextFreeStart(currentTime);
+      if (previousTaskId !== null) {
+        currentTime = getNextFreeStart(currentTime + savedTransitionGap);
+      } else {
+        currentTime = getNextFreeStart(currentTime);
+      }
       if (currentTime >= sleep) {
         break;
-      }
-
-      // For deep work, prefer placing the FIRST session of the day in peak hours
-      if (task.taskType === 'deep' && previousTaskId === null) {
-        const peakStart = findPeakStart(sessionLength);
-        if (peakStart !== null && peakStart >= currentTime) {
-          currentTime = peakStart;
-        }
       }
 
       let blockEnd = Math.min(currentTime + sessionLength, sleep);
@@ -1402,22 +1383,54 @@ function App() {
         const breakEnd = Math.min(currentTime + breakLength, sleep);
         if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
           schedule.push({ start: toTimeString(currentTime), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
-          currentTime = breakEnd + savedTransitionGap;
+          currentTime = breakEnd;
         } else {
           currentTime = getNextFreeStart(currentTime);
         }
       } else {
-        // Alternating to a different task: just a transition gap, no full break needed
-        currentTime += savedTransitionGap;
+        // Alternating to a different task: no gap needed — gap only applies task→task
       }
 
       previousTaskId = task.id;
       previousTaskType = task.taskType;
     }
     
+    // Fill short gaps (≥15 min) with light tasks
+    const lightPool = availableTasks.filter((t) => t.taskType === 'light' && remainingByTask[t.id] > 0);
+    if (lightPool.length > 0) {
+      let scanTime = wake;
+      let fillSafety = 0;
+      while (scanTime < sleep && fillSafety < 500) {
+        fillSafety++;
+        if (isOccupiedAt(scanTime, scanTime + 1)) {
+          scanTime++;
+          continue;
+        }
+        let gapEnd = scanTime;
+        while (gapEnd < sleep && !isOccupiedAt(gapEnd, gapEnd + 1)) {
+          gapEnd++;
+        }
+        const gapSize = gapEnd - scanTime;
+        if (gapSize >= 15) {
+          const fillTask = lightPool.find((t) => remainingByTask[t.id] > 0);
+          if (fillTask) {
+            const fillSize = Math.min(remainingByTask[fillTask.id], gapSize);
+            schedule.push({ start: toTimeString(scanTime), end: toTimeString(scanTime + fillSize), label: fillTask.taskName, type: 'study' });
+            remainingByTask[fillTask.id] -= fillSize;
+          }
+        }
+        scanTime = gapEnd + 1;
+      }
+    }
+
+    schedule.push({ start: '00:00', end: toTimeString(toMinutes(effectiveWake)), label: 'Sleep', type: 'sleep' });
     if (toMinutes(effectiveSleep) > 0) {
       schedule.push({ start: effectiveSleep, end: '23:59', label: 'Sleep', type: 'sleep' });
+    } else {
+      // 00:00 sleep time means midnight — no end-of-day sleep block needed,
+      // the start-of-day block already covers 00:00 to wakeTime
     }
+    
     // Sort and merge consecutive commute blocks
     const todayStr = forDate.toDateString();
     const sorted = schedule.sort((a, b) => a.start.localeCompare(b.start));
@@ -1464,15 +1477,15 @@ function App() {
       summary.push(`${t.taskName} could not be fully scheduled — not enough free time today`);
     });
     // Include flagged blocks
-    Object.entries(scheduleFeedback).forEach(([index, flag]) => {
+    Object.entries(scheduleFeedback).forEach(([key, flag]) => {
       if (!flag) {
         return;
       }
-      const block = schedule[Number(index)];
-      if (block) {
-        const note = flagInput[index] ? `"${flagInput[index]}"` : 'no note left';
-        summary.push(`You flagged "${block.label}" at ${formatTime(block.start)} — ${note}`);
-      }
+
+      const [start, ...labelParts] = key.split('-');
+      const label = labelParts.join('-');
+      const note = flagInput[key] ? `"${flagInput[key]}"` : 'no note left';
+      summary.push(`You flagged "${label}" at ${formatTime(start)} — ${note}`);
     });
     return summary;
   }
@@ -1489,6 +1502,7 @@ function App() {
   function handleGenerateSchedule() {
     setScheduleFeedback({});
     setFlagInput({});
+    setScheduleSuggestions([]);
     let daysToGenerate = [];
     if (scheduleView === 'day') {
       daysToGenerate = [selectedDay];
@@ -2496,29 +2510,19 @@ function App() {
           {scheduleView === 'day' && (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minHeight: 0 }}>
               <div className="day-detail-header" style={{ flexShrink: 0 }}>
-                <div className="day-detail-title-row">
-                  <button className="back-btn" type="button" onClick={() => setScheduleView('week')}>←</button>
-                  <div>
-                    <div className="day-detail-title">
-                      {selectedDay.toLocaleDateString('en-US', { weekday: 'long' })}
-                    </div>
-                    <div className="day-detail-subtitle">
-                      {selectedDay.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
-                      {isToday(selectedDay) ? ' · Today' : ''}
-                    </div>
+              <div className="day-detail-title-row">
+                <button className="back-btn" type="button" onClick={() => setScheduleView('week')}>←</button>
+                <div>
+                  <div className="day-detail-title">
+                    {selectedDay.toLocaleDateString('en-US', { weekday: 'long' })}
+                  </div>
+                  <div className="day-detail-subtitle">
+                    {selectedDay.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                    {isToday(selectedDay) ? ' · Today' : ''}
                   </div>
                 </div>
-                <div className="day-strip">
-                  {weekDays.map((day, i) => (
-                    <button key={i} type="button"
-                      className={`day-strip-chip${isSameDay(day, selectedDay) ? ' active' : ''}`}
-                      onClick={() => setSelectedDay(day)}>
-                      <span className="day-strip-chip-name">{DAY_NAMES[day.getDay()]}</span>
-                      <span className="day-strip-chip-num">{day.getDate()}</span>
-                    </button>
-                  ))}
-                </div>
               </div>
+            </div>
 
               <div className="day-timeline" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                 {(() => {
@@ -2545,18 +2549,53 @@ function App() {
                       <div key={i} className="tl-row">
                         <div className="tl-time">{formatTime(block.start)}</div>
                         <div className="tl-line" />
-                        <div className={`tl-block cat-${block.category}`}>
+                        <div className={`tl-block cat-${block.category}`}
+                          onClick={() => {
+                            const key = `${block.start}-${block.label}`;
+                            setScheduleFeedback((prev) => ({ ...prev, [key]: !prev[key] }));
+                          }}
+                          style={{ outline: scheduleFeedback[`${block.start}-${block.label}`] ? '2px solid var(--brand)' : 'none' }}>
                           <div className="tl-block-name">
                             {getEmojiForCategory(block.category)} {block.label}
                           </div>
                           {block.location && (
-                            <div className="tl-block-location">
-                              📍 {block.location}
-                            </div>
+                            <div className="tl-block-location">📍 {block.location}</div>
                           )}
                           <div className="tl-block-time">
                             {formatTime(block.start)} – {formatTime(block.end)}
                           </div>
+                          {scheduleFeedback[`${block.start}-${block.label}`] && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                placeholder="What should change? (optional)"
+                                value={flagInput[`${block.start}-${block.label}`] || ''}
+                                onChange={(e) => {
+                                  const key = `${block.start}-${block.label}`;
+                                  setFlagInput((prev) => ({ ...prev, [key]: e.target.value }));
+                                }}
+                                style={{ marginTop: 6, fontSize: 12 }}
+                              />
+                              <button
+                                type="button"
+                                className="btn-primary"
+                                style={{ marginTop: 6, fontSize: 12, padding: '6px 12px', width: 'auto' }}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const key = `${block.start}-${block.label}`;
+                                  const note = flagInput[key] || '';
+                                  setScheduleSuggestions((prev) => {
+                                    const filtered = prev.filter((s) => s.key !== key);
+                                    return [...filtered, { key, label: block.label, start: block.start, note }];
+                                  });
+                                  setFlagInput((prev) => ({ ...prev, [key]: '' }));
+                                  setScheduleFeedback((prev) => ({ ...prev, [key]: false }));
+                                }}
+                              >
+                                Submit suggestion
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     );
