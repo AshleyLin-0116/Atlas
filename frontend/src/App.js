@@ -136,6 +136,7 @@ function App() {
   const [resetConfirmPassword, setResetConfirmPassword] = useState('');
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // ── Core data ──
   const [tasks, setTasks] = useState([]);
@@ -2388,13 +2389,20 @@ function App() {
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Username</label>
             <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="username" />
             <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Password</label>
-            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••"
-              onKeyDown={(e) => { 
-                if (e.key === 'Enter') { 
-                  authMode === 'login' ? handleLogin() : handleRegister(); 
-                } 
-              }} 
-            />
+            <div style={{ position: 'relative' }}>
+              <input type={showPassword ? 'text' : 'password'} value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••"
+                style={{ paddingRight: 40 }}
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter') { 
+                    authMode === 'login' ? handleLogin() : handleRegister(); 
+                  } 
+                }} 
+              />
+              <button type="button" onClick={() => setShowPassword(!showPassword)}
+                style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', padding: 4, cursor: 'pointer', fontSize: 13, color: 'var(--text-muted)', width: 'auto' }}>
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
             {authMode === 'login' ? (
               <>
                 <button className="btn-primary" type="button" onClick={handleLogin} style={{ marginTop: 8 }}>Log in</button>
