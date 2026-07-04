@@ -67,8 +67,13 @@ def normalize(row):
         'waketime': 'wakeTime',
         'sleeptime': 'sleepTime',
         'specificdate': 'specificDate',
-        'commutetimeto': 'commuteTimeTo',
-        'commutetimefrom': 'commuteTimeFrom',
+        'isrecurring': 'isRecurring',
+        'recurringdays': 'recurringDays',
+        'recurringtemplateid': 'recurringTemplateId',
+        'repeatuntiltype': 'repeatUntilType',
+        'repeatuntildate': 'repeatUntilDate',
+        'repeatcount': 'repeatCount',
+        'startdate': 'startDate',
     }
     return {key_map.get(k, k): v for k, v in dict(row).items()}
 
@@ -220,6 +225,27 @@ def init_db():
             logged_at TEXT DEFAULT (now()::text)
         )
     """)
+    cur.execute("""
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS isRecurring INTEGER DEFAULT 0
+    """)
+    cur.execute("""
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurringDays TEXT DEFAULT ''
+    """)
+    cur.execute("""
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS recurringTemplateId INTEGER
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS repeatUntilType TEXT DEFAULT 'forever'
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS repeatUntilDate TEXT
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS repeatCount INTEGER
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS startDate TEXT
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -282,6 +308,8 @@ class Task(BaseModel):
     category: Optional[str] = None
     workOnDueDate: Optional[bool] = True
     description: Optional[str] = None
+    isRecurring: Optional[bool] = False
+    recurringDays: Optional[str] = ''
 
 class TaskFeedback(BaseModel):
     actual_duration: float
@@ -318,6 +346,10 @@ class Commitment(BaseModel):
     flexPreference: Optional[str] = 'any'
     days: Optional[str] = ''
     specificDate: Optional[str] = None
+    repeatUntilType: Optional[str] = 'forever'
+    repeatUntilDate: Optional[str] = None
+    repeatCount: Optional[int] = None
+    startDate: Optional[str] = None
 
 class SleepSchedule(BaseModel):
     wakeTime: str
@@ -551,10 +583,44 @@ def delete_account(body: dict, user_id: int = Depends(get_current_user)):
 
 # ── Tasks ──
 
+def generate_recurring_instances(user_id, cur):
+    day_names = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    cur.execute(
+        "SELECT * FROM tasks WHERE user_id = %s AND isRecurring = 1",
+        (user_id,)
+    )
+    templates = cur.fetchall()
+    today = datetime.now().date()
+    for template in templates:
+        days = (template['recurringdays'] or '').split(',')
+        days = [d for d in days if d]
+        for offset in range(7):
+            target_date = today + timedelta(days=offset)
+            target_day_name = day_names[(target_date.weekday() + 1) % 7]
+            if target_day_name not in days:
+                continue
+            deadline_str = target_date.isoformat()
+            cur.execute(
+                "SELECT id FROM tasks WHERE recurringTemplateId = %s AND deadline = %s AND user_id = %s",
+                (template['id'], deadline_str, user_id)
+            )
+            if cur.fetchone():
+                continue
+            cur.execute(
+                """INSERT INTO tasks
+                (user_id, taskName, deadline, difficulty, importance, userPreference, duration, taskType, category, workOnDueDate, description, isRecurring, recurringDays, recurringTemplateId)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0, '', %s)""",
+                (user_id, template['taskname'], deadline_str, template['difficulty'], template['importance'],
+                template['userpreference'], template['duration'], template['tasktype'], template['category'],
+                template['workonduedate'], template['description'], template['id'])
+            )
+
 @app.get("/tasks")
 def get_tasks(user_id: int = Depends(get_current_user)):
     conn = get_db()
     cur = conn.cursor()
+    generate_recurring_instances(user_id, cur)
+    conn.commit()
     cur.execute("SELECT * FROM tasks WHERE user_id = %s", (user_id,))
     tasks = cur.fetchall()
     result = []
@@ -576,11 +642,11 @@ def add_task(task: Task, user_id: int = Depends(get_current_user)):
     cur = conn.cursor()
     cur.execute(
         """INSERT INTO tasks
-        (user_id, taskName, deadline, difficulty, importance, userPreference, duration, taskType, category, workOnDueDate, description)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        (user_id, taskName, deadline, difficulty, importance, userPreference, duration, taskType, category, workOnDueDate, description, isRecurring, recurringDays)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, task.taskName, task.deadline, task.difficulty, task.importance,
         task.userPreference, task.duration, task.taskType, task.category,
-        int(task.workOnDueDate), task.description)
+        int(task.workOnDueDate), task.description, int(task.isRecurring), task.recurringDays)
     )
     result = cur.fetchone()
     conn.commit()
@@ -596,11 +662,12 @@ def update_task(task_id: int, task: Task, user_id: int = Depends(get_current_use
         """UPDATE tasks SET
         taskName = %s, deadline = %s, difficulty = %s, importance = %s,
         userPreference = %s, duration = %s, taskType = %s, category = %s,
-        workOnDueDate = %s, description = %s
+        workOnDueDate = %s, description = %s, isRecurring = %s, recurringDays = %s
         WHERE id = %s AND user_id = %s RETURNING *""",
         (task.taskName, task.deadline, task.difficulty, task.importance,
         task.userPreference, task.duration, task.taskType, task.category,
-        int(task.workOnDueDate), task.description, task_id, user_id)
+        int(task.workOnDueDate), task.description, int(task.isRecurring), task.recurringDays,
+        task_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()
@@ -849,15 +916,18 @@ def add_commitment(commitment: Commitment, user_id: int = Depends(get_current_us
     cur = conn.cursor()
     cc_to = commitment.commuteTimeTo if commitment.commuteTimeTo is not None else commitment.commuteTime
     cc_from = commitment.commuteTimeFrom if commitment.commuteTimeFrom is not None else commitment.commuteTime
+    start_date = commitment.startDate or datetime.now().date().isoformat()
     cur.execute(
         """INSERT INTO commitments
         (user_id, commitmentName, commitmentStart, commitmentEnd, commitmentType,
-        commuteTime, commuteTimeTo, commuteTimeFrom, timeMode, flexDuration, flexPreference, days, specificDate)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
+        commuteTime, commuteTimeTo, commuteTimeFrom, timeMode, flexDuration, flexPreference, days, specificDate,
+        repeatUntilType, repeatUntilDate, repeatCount, startDate)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING *""",
         (user_id, commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
         commitment.commitmentType, commitment.commuteTime, cc_to, cc_from,
         commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
-        commitment.days, commitment.specificDate)
+        commitment.days, commitment.specificDate,
+        commitment.repeatUntilType, commitment.repeatUntilDate, commitment.repeatCount, start_date)
     )
     result = cur.fetchone()
     conn.commit()
@@ -876,12 +946,14 @@ def update_commitment(commitment_id: int, commitment: Commitment, user_id: int =
         commitmentEnd = %s, commitmentType = %s, commuteTime = %s,
         commuteTimeTo = %s, commuteTimeFrom = %s,
         timeMode = %s, flexDuration = %s, flexPreference = %s, days = %s,
-        specificDate = %s
+        specificDate = %s, repeatUntilType = %s, repeatUntilDate = %s, repeatCount = %s
         WHERE id = %s AND user_id = %s RETURNING *""",
         (commitment.commitmentName, commitment.commitmentStart, commitment.commitmentEnd,
         commitment.commitmentType, commitment.commuteTime, c_to, c_from,
         commitment.timeMode, commitment.flexDuration, commitment.flexPreference,
-        commitment.days, commitment.specificDate, commitment_id, user_id)
+        commitment.days, commitment.specificDate,
+        commitment.repeatUntilType, commitment.repeatUntilDate, commitment.repeatCount,
+        commitment_id, user_id)
     )
     result = cur.fetchone()
     conn.commit()

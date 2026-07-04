@@ -165,6 +165,8 @@ function App() {
   const [editingDifficulty, setEditingDifficulty] = useState(false);
   const [editingImportance, setEditingImportance] = useState(false);
   const [editingUserPreference, setEditingUserPreference] = useState(false);
+  const [isRecurringTask, setIsRecurringTask] = useState(false);
+  const [recurringDays, setRecurringDays] = useState([]);
 
   // ── NL input ──
   const [nlInput, setNlInput] = useState('');
@@ -195,6 +197,8 @@ function App() {
   const [taskStartTime, setTaskStartTime] = useState(null);
   const [manualStartTime, setManualStartTime] = useState('');
   const [showHistory, setShowHistory] = useState(false);
+  const [completionPercent, setCompletionPercent] = useState(100);
+  const [completionTouched, setCompletionTouched] = useState(false);
 
   // ── Meal form ──
   const [mealName, setMealName] = useState('');
@@ -238,6 +242,9 @@ function App() {
   const [commitmentDays, setCommitmentDays] = useState([]);
   const [commitmentScheduleType, setCommitmentScheduleType] = useState('recurring');
   const [commitmentSpecificDate, setCommitmentSpecificDate] = useState('');
+  const [commitmentRepeatUntilType, setCommitmentRepeatUntilType] = useState('forever');
+  const [commitmentRepeatUntilDate, setCommitmentRepeatUntilDate] = useState('');
+  const [commitmentRepeatCount, setCommitmentRepeatCount] = useState(10);
 
   // ── Commitment editing ──
   const [editingCommitmentId, setEditingCommitmentId] = useState(null);
@@ -254,6 +261,9 @@ function App() {
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
   const [editCommitmentScheduleType, setEditCommitmentScheduleType] = useState('recurring');
   const [editCommitmentSpecificDate, setEditCommitmentSpecificDate] = useState('');
+  const [editCommitmentRepeatUntilType, setEditCommitmentRepeatUntilType] = useState('forever');
+  const [editCommitmentRepeatUntilDate, setEditCommitmentRepeatUntilDate] = useState('');
+  const [editCommitmentRepeatCount, setEditCommitmentRepeatCount] = useState(10);
 
   // ── Settings ──
   const [clockFormat, setClockFormat] = useState('12');
@@ -625,6 +635,9 @@ function App() {
           } else {
             const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
             if (days.length > 0 && !days.includes(dayName)) {
+              return;
+            }
+            if (!isCommitmentActiveOn(commitment, date)) {
               return;
             }
           }
@@ -1179,6 +1192,9 @@ function App() {
           if (!dayList.includes(todayName)) { 
             return []; 
           }
+          if (!isCommitmentActiveOn(commitment, forDate)) {
+            return [];
+          }
         }
         const cTo = commitment.commuteTimeTo ?? commitment.commuteTime ?? 0;
         const cFrom = commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0;
@@ -1372,6 +1388,9 @@ function App() {
           if (!dayList.includes(todayName)) {
             continue;
           }
+          if (!isCommitmentActiveOn(commitment, forDate)) {
+            continue;
+          }
         }
         placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTimeTo ?? commitment.commuteTime ?? 0, commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0);      
       }
@@ -1379,7 +1398,7 @@ function App() {
 
     // ── Task scheduling ──────────────────────────────────────────────────────
     const availableTasks = tasks.filter(
-      (t) => t.completion_status !== 'Completed' && !isBlocked(t) && t.duration && Number(t.duration) > 0
+      (t) => t.completion_status !== 'Completed' && !t.isRecurring && !isBlocked(t) && t.duration && Number(t.duration) > 0
     );
 
     const remainingByTask = {};
@@ -1729,7 +1748,12 @@ function App() {
       alert('Task name is required.'); 
       return; 
     }
-    if (!deadline) { 
+    if (isRecurringTask) {
+      if (recurringDays.length === 0) { 
+        alert('Please select at least one day for this recurring task.'); 
+        return; 
+      }
+    } else if (!deadline) { 
       alert('Deadline is required.'); 
       return; 
     }
@@ -1742,14 +1766,20 @@ function App() {
       return; 
     }
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (new Date(deadline) < today && !workOnDueDate) { 
+    if (!isRecurringTask && new Date(deadline) < today && !workOnDueDate) { 
       alert('Deadline cannot be in the past.'); 
       return; 
     }
     const finalTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
     authFetch(`${process.env.REACT_APP_API_URL}/tasks`, {
       method: 'POST',
-      body: JSON.stringify({ taskName: taskName.trim(), deadline, difficulty: Number(difficulty), importance: Number(importance), userPreference: Number(userPreference), duration: Number(duration), taskType: finalTaskType, category, workOnDueDate, description })
+      body: JSON.stringify({
+        taskName: taskName.trim(),
+        deadline: isRecurringTask ? today.toISOString().split('T')[0] : deadline,
+        difficulty: Number(difficulty), importance: Number(importance), userPreference: Number(userPreference),
+        duration: Number(duration), taskType: finalTaskType, category, workOnDueDate, description,
+        isRecurring: isRecurringTask, recurringDays: isRecurringTask ? recurringDays.join(',') : ''
+      })
     })
       .then((res) => res.json())
       .then((savedTask) => {
@@ -1760,6 +1790,7 @@ function App() {
         setTaskName(''); setDeadline(''); setDifficulty(5); setImportance(5); setUserPreference(5);
         setDuration(''); setAutoTaskType('deep'); setCategory(''); setUserOverrideType(null);
         setWorkOnDueDate(true); setDescription('');
+        setIsRecurringTask(false); setRecurringDays([]);
       })
       .catch((err) => console.error('Failed to add task:', err));
   }
@@ -1806,9 +1837,19 @@ function App() {
       .catch((err) => console.error('Failed to update task:', err));
   }
 
+  function percentToStatus(percent) {
+    if (percent >= 90) {
+      return 'Completed';
+    }
+    if (percent <= 5) {
+      return 'Not Completed';
+    }
+    return 'Partially Completed';
+  }
+
   function handleSubmitFeedback(taskId) {
-    if (!completionStatus) { 
-      alert('Please select a completion status.'); 
+    if (!completionTouched) { 
+      alert('Please indicate how much you completed.'); 
       return; 
     }
     if (!actualDuration || Number(actualDuration) <= 0) { 
@@ -1823,6 +1864,7 @@ function App() {
       .then(() => {
         setTasks(tasks.map((task) => task.id === taskId ? { ...task, actual_duration: Number(actualDuration), actual_difficulty: Number(actualDifficulty), completion_status: completionStatus } : task));
         setFeedbackTaskId(null); setActualDuration(''); setActualDifficulty(5); setCompletionStatus(''); setManualStartTime('');
+        setCompletionPercent(100); setCompletionTouched(false);
         authFetch(`${process.env.REACT_APP_API_URL}/history`).then((res) => res.json()).then(setHistory).catch((err) => console.error('Failed to reload history:', err));
       })
       .catch((err) => console.error('Fetch failed:', err));
@@ -1847,6 +1889,9 @@ function App() {
     .then((data) => setPreviousDuration(data.total || 0))
     .catch(() => setPreviousDuration(0));
     setFeedbackTaskId(taskId);
+    setCompletionPercent(100);
+    setCompletionTouched(false);
+    setCompletionStatus('');
   }
 
   function handleAddDependency(taskId, dependsOnId) {
@@ -2068,9 +2113,28 @@ function App() {
       alert('Please enter a valid duration for this commitment.'); 
       return; 
     }
+    if (commitmentScheduleType === 'recurring' && commitmentRepeatUntilType === 'until_date' && !commitmentRepeatUntilDate) {
+      alert('Please select an end date.');
+      return;
+    }
+    if (commitmentScheduleType === 'recurring' && commitmentRepeatUntilType === 'count' && (!commitmentRepeatCount || commitmentRepeatCount <= 0)) {
+      alert('Please enter a valid number of occurrences.');
+      return;
+    }
     authFetch(`${process.env.REACT_APP_API_URL}/commitments`, {
       method: 'POST',
-      body: JSON.stringify({ commitmentName: commitmentName.trim(), commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null, commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null, commitmentType, commuteTime, commuteTimeTo, commuteTimeFrom, timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference, days: commitmentScheduleType === 'recurring' ? commitmentDays.join(',') : '', specificDate: commitmentScheduleType === 'specific' ? commitmentSpecificDate : null })
+      body: JSON.stringify({
+        commitmentName: commitmentName.trim(),
+        commitmentStart: commitmentTimeMode === 'fixed' ? commitmentStart : null,
+        commitmentEnd: commitmentTimeMode === 'fixed' ? commitmentEnd : null,
+        commitmentType, commuteTime, commuteTimeTo, commuteTimeFrom,
+        timeMode: commitmentTimeMode, flexDuration: commitmentFlexDuration, flexPreference: commitmentFlexPreference,
+        days: commitmentScheduleType === 'recurring' ? commitmentDays.join(',') : '',
+        specificDate: commitmentScheduleType === 'specific' ? commitmentSpecificDate : null,
+        repeatUntilType: commitmentScheduleType === 'recurring' ? commitmentRepeatUntilType : 'forever',
+        repeatUntilDate: commitmentRepeatUntilType === 'until_date' ? commitmentRepeatUntilDate : null,
+        repeatCount: commitmentRepeatUntilType === 'count' ? commitmentRepeatCount : null
+      })
     })
       .then((res) => res.json())
       .then((savedCommitment) => {
@@ -2088,6 +2152,9 @@ function App() {
         setCommitmentDays([]);
         setCommitmentScheduleType('recurring'); 
         setCommitmentSpecificDate('');
+        setCommitmentRepeatUntilType('forever');
+        setCommitmentRepeatUntilDate('');
+        setCommitmentRepeatCount(10);
       })
       .catch((err) => console.error('Failed to add commitment:', err));
   }
@@ -2113,12 +2180,27 @@ function App() {
     setEditCommitmentDays(commitment.days ? commitment.days.split(',').filter(Boolean) : []);
     setEditCommitmentScheduleType(commitment.specificDate ? 'specific' : 'recurring');
     setEditCommitmentSpecificDate(commitment.specificDate || '');
+    setEditCommitmentRepeatUntilType(commitment.repeatUntilType || 'forever');
+    setEditCommitmentRepeatUntilDate(commitment.repeatUntilDate || '');
+    setEditCommitmentRepeatCount(commitment.repeatCount || 10);
   }
 
   function handleUpdateCommitment(commitmentId) {
     authFetch(`${process.env.REACT_APP_API_URL}/commitments/${commitmentId}`, {
       method: 'PUT',
-      body: JSON.stringify({ commitmentName: editCommitmentName, commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null, commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null, commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime, commuteTimeTo: editCommitmentCommuteTimeTo, commuteTimeFrom: editCommitmentCommuteTimeFrom, timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference, days: editCommitmentScheduleType === 'recurring' ? editCommitmentDays.join(',') : '', specificDate: editCommitmentScheduleType === 'specific' ? editCommitmentSpecificDate : null })
+      body: JSON.stringify({
+        commitmentName: editCommitmentName,
+        commitmentStart: editCommitmentTimeMode === 'fixed' ? editCommitmentStart : null,
+        commitmentEnd: editCommitmentTimeMode === 'fixed' ? editCommitmentEnd : null,
+        commitmentType: editCommitmentType, commuteTime: editCommitmentCommuteTime,
+        commuteTimeTo: editCommitmentCommuteTimeTo, commuteTimeFrom: editCommitmentCommuteTimeFrom,
+        timeMode: editCommitmentTimeMode, flexDuration: editCommitmentFlexDuration, flexPreference: editCommitmentFlexPreference,
+        days: editCommitmentScheduleType === 'recurring' ? editCommitmentDays.join(',') : '',
+        specificDate: editCommitmentScheduleType === 'specific' ? editCommitmentSpecificDate : null,
+        repeatUntilType: editCommitmentScheduleType === 'recurring' ? editCommitmentRepeatUntilType : 'forever',
+        repeatUntilDate: editCommitmentRepeatUntilType === 'until_date' ? editCommitmentRepeatUntilDate : null,
+        repeatCount: editCommitmentRepeatUntilType === 'count' ? editCommitmentRepeatCount : null
+      })
     })
       .then((res) => res.json())
       .then((saved) => { 
@@ -2126,6 +2208,39 @@ function App() {
         setEditingCommitmentId(null); 
       })
       .catch((err) => console.error('Failed to update commitment:', err));
+  }
+
+  function isCommitmentActiveOn(commitment, date) {
+    if (commitment.specificDate) {
+      return true;
+    }
+    if (!commitment.repeatUntilType || commitment.repeatUntilType === 'forever') {
+      return true;
+    }
+    if (commitment.repeatUntilType === 'until_date' && commitment.repeatUntilDate) {
+      return date <= new Date(commitment.repeatUntilDate + 'T23:59:59');
+    }
+    if (commitment.repeatUntilType === 'count' && commitment.repeatCount && commitment.startDate) {
+      const days = commitment.days ? commitment.days.split(',').filter(Boolean) : [];
+      if (days.length === 0) {
+        return true;
+      }
+      const start = new Date(commitment.startDate + 'T00:00:00');
+      if (date < start) {
+        return false;
+      }
+      let occurrences = 0;
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const cursor = new Date(start);
+      while (cursor <= date) {
+        if (days.includes(dayNames[cursor.getDay()])) {
+          occurrences++;
+        }
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return occurrences <= commitment.repeatCount;
+    }
+    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2887,6 +3002,31 @@ function App() {
                 })}
               </div>
             )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" id="isRecurringTask" checked={isRecurringTask} onChange={(e) => setIsRecurringTask(e.target.checked)} style={{ width: 'auto' }} />
+              <label htmlFor="isRecurringTask" style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>Recurring weekly task</label>
+            </div>
+            {isRecurringTask && (
+              <div>
+                <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Which days should this task repeat on?
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {DAYS.map((day) => (
+                    <button key={day} type="button"
+                      onClick={() => toggleDay(day, recurringDays, setRecurringDays)}
+                      style={{
+                        padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                        background: recurringDays.includes(day) ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                        color: recurringDays.includes(day) ? 'white' : 'var(--text-secondary)',
+                        border: '1.5px solid var(--border-color)',
+                      }}>
+                      {day.slice(0, 3)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               Atlas thinks this is: <strong style={{ color: 'var(--text-primary)' }}>{activeTaskType === 'deep' ? 'Deep Work' : 'Light Work'}</strong>
             </p>
@@ -2900,9 +3040,24 @@ function App() {
             <button className="btn-primary" type="button" onClick={handleAddTask}>Add task</button>
           </div>
 
+          <div className="section-label">Recurring tasks</div>
+          {tasks.filter((t) => t.isRecurring).length === 0 ? (
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 16 }}>No recurring tasks set up.</p>
+          ) : (
+            tasks.filter((t) => t.isRecurring).map((template) => (
+              <div key={template.id} className="card" style={{ marginBottom: 10 }}>
+                <p style={{ fontWeight: 700, fontSize: 14 }}>{template.taskName}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Repeats {(template.recurringDays || '').split(',').filter(Boolean).map((d) => d.slice(0, 3)).join(', ')}
+                </p>
+                <button className="btn-danger" type="button" onClick={() => handleDeleteTask(template.id)} style={{ marginTop: 8 }}>Delete</button>
+              </div>
+            ))
+          )}
+
           <div className="section-label">Active tasks</div>
           {(() => {
-            const activeTasks = [...tasks].filter((t) => t.completion_status !== 'Completed')
+            const activeTasks = [...tasks].filter((t) => t.completion_status !== 'Completed' && !t.isRecurring)
               .sort((a, b) => calculatePriorityScore(b) - calculatePriorityScore(a));
             if (activeTasks.length === 0) {
               return <p style={{ color: 'var(--text-muted)', fontSize: 14, textAlign: 'center', padding: '24px 0' }}>No active tasks.</p>;
@@ -2945,12 +3100,20 @@ function App() {
                     {previousDuration > 0 && (
                       <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Previously logged: {previousDuration} min</p>
                     )}
-                    <select value={completionStatus} onChange={(e) => setCompletionStatus(e.target.value)}>
-                      <option value="">Select status...</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Partially Completed">Partially Completed</option>
-                      <option value="Not Completed">Not Completed</option>
-                    </select>
+                    <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                      How much did you finish? {completionPercent}%
+                    </label>
+                    <input type="range" min="0" max="100" step="1" value={completionPercent}
+                      onChange={(e) => {
+                        const percent = Number(e.target.value);
+                        setCompletionPercent(percent);
+                        setCompletionStatus(percentToStatus(percent));
+                        setCompletionTouched(true);
+                      }} 
+                    />
+                    <p style={{ fontSize: 12, fontWeight: 600, color: completionPercent >= 90 ? 'var(--brand)' : completionPercent <= 5 ? '#c0392b' : 'var(--text-secondary)' }}>
+                      {percentToStatus(completionPercent)}
+                    </p>
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Duration (minutes)</label>
                     <input type="number" min="0" value={actualDuration} onChange={(e) => setActualDuration(e.target.value)} />
                     <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Actual difficulty: {actualDifficulty}</label>
@@ -2960,6 +3123,8 @@ function App() {
                       <button className="btn-secondary" type="button" onClick={() => { 
                         setFeedbackTaskId(null); 
                         setPreviousDuration(0); 
+                        setCompletionPercent(100);
+                        setCompletionTouched(false);
                       }} style={{ flex: 1 }}>
                         Cancel
                       </button>
@@ -3207,6 +3372,22 @@ function App() {
                 <input type="date" value={commitmentSpecificDate} onChange={(e) => setCommitmentSpecificDate(e.target.value)} />
               </>
             )}
+            {commitmentScheduleType === 'recurring' && (
+              <>
+                <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Repeats until</label>
+                <select value={commitmentRepeatUntilType} onChange={(e) => setCommitmentRepeatUntilType(e.target.value)}>
+                  <option value="forever">Forever</option>
+                  <option value="until_date">A specific date</option>
+                  <option value="count">A number of times</option>
+                </select>
+                {commitmentRepeatUntilType === 'until_date' && (
+                  <input type="date" value={commitmentRepeatUntilDate} onChange={(e) => setCommitmentRepeatUntilDate(e.target.value)} />
+                )}
+                {commitmentRepeatUntilType === 'count' && (
+                  <input type="number" min="1" value={commitmentRepeatCount} onChange={(e) => setCommitmentRepeatCount(Number(e.target.value))} placeholder="Number of occurrences" />
+                )}
+              </>
+            )}
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to commitment (min)</label>
             <input type="number" min="0" max="120" value={commuteTimeTo} onChange={(e) => setCommuteTimeTo(Number(e.target.value))} />
             <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from commitment (min)</label>
@@ -3273,6 +3454,22 @@ function App() {
                       <input type="date" value={editCommitmentSpecificDate} onChange={(e) => setEditCommitmentSpecificDate(e.target.value)} />
                     </>
                   )}
+                  {editCommitmentScheduleType === 'recurring' && (
+                    <>
+                      <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Repeats until</label>
+                      <select value={editCommitmentRepeatUntilType} onChange={(e) => setEditCommitmentRepeatUntilType(e.target.value)}>
+                        <option value="forever">Forever</option>
+                        <option value="until_date">A specific date</option>
+                        <option value="count">A number of times</option>
+                      </select>
+                      {editCommitmentRepeatUntilType === 'until_date' && (
+                        <input type="date" value={editCommitmentRepeatUntilDate} onChange={(e) => setEditCommitmentRepeatUntilDate(e.target.value)} />
+                      )}
+                      {editCommitmentRepeatUntilType === 'count' && (
+                        <input type="number" min="1" value={editCommitmentRepeatCount} onChange={(e) => setEditCommitmentRepeatCount(Number(e.target.value))} />
+                      )}
+                    </>
+                  )}
                   <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute to commitment (min)</label>
                   <input type="number" min="0" max="120" value={editCommitmentCommuteTimeTo} onChange={(e) => setEditCommitmentCommuteTimeTo(Number(e.target.value))} />
                   <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Commute back from commitment (min)</label>
@@ -3294,6 +3491,12 @@ function App() {
                       : commitment.days && commitment.days.length > 0
                         ? ` · ${commitment.days.split(',').filter(Boolean).map((d) => d.slice(0,3)).join(', ')}`
                         : ''}
+                    {!commitment.specificDate && commitment.repeatUntilType === 'until_date' && commitment.repeatUntilDate
+                      ? ` · until ${new Date(commitment.repeatUntilDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+                      : ''}
+                    {!commitment.specificDate && commitment.repeatUntilType === 'count' && commitment.repeatCount
+                      ? ` · ${commitment.repeatCount}x`
+                      : ''}
                   </p>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn-secondary" type="button" onClick={() => handleEditCommitment(commitment)} style={{ flex: 1 }}>Edit</button>
