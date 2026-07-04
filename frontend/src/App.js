@@ -66,12 +66,11 @@ function TimePicker({ value, onChange, clockFormat }) {
 function FlexPreferenceSelect({ value, onChange }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
-      <option value="any">Any time</option>
       <option value="early_morning">Early morning (before 9am)</option>
-      <option value="morning">Morning (9am–12pm)</option>
-      <option value="afternoon">Afternoon (12pm–5pm)</option>
-      <option value="evening">Evening (5pm–9pm)</option>
-      <option value="night">Night (after 9pm)</option>
+      <option value="morning">Morning (9am-12pm)</option>
+      <option value="afternoon">Afternoon (12pm-3pm)</option>
+      <option value="evening">Evening (3pm-6pm)</option>
+      <option value="night">Night (after 6pm)</option>
     </select>
   );
 }
@@ -205,7 +204,7 @@ function App() {
   const [mealCommuteTimeFrom, setMealCommuteTimeFrom] = useState(0);
   const [mealTimeMode, setMealTimeMode] = useState('fixed');
   const [mealFlexDuration, setMealFlexDuration] = useState(30);
-  const [mealFlexPreference, setMealFlexPreference] = useState('any');
+  const [mealFlexPreference, setMealFlexPreference] = useState('early_morning');
 
   // ── Meal editing ──
   const [editingMealId, setEditingMealId] = useState(null);
@@ -217,7 +216,7 @@ function App() {
   const [editMealCommuteTimeFrom, setEditMealCommuteTimeFrom] = useState(0);
   const [editMealTimeMode, setEditMealTimeMode] = useState('fixed');
   const [editMealFlexDuration, setEditMealFlexDuration] = useState(30);
-  const [editMealFlexPreference, setEditMealFlexPreference] = useState('any');
+  const [editMealFlexPreference, setEditMealFlexPreference] = useState('early_morning');
 
   // ── Meal feedback ──
   const [mealFeedbackId, setMealFeedbackId] = useState(null);
@@ -234,7 +233,7 @@ function App() {
   const [commuteTimeFrom, setCommuteTimeFrom] = useState(0);
   const [commitmentTimeMode, setCommitmentTimeMode] = useState('fixed');
   const [commitmentFlexDuration, setCommitmentFlexDuration] = useState(60);
-  const [commitmentFlexPreference, setCommitmentFlexPreference] = useState('any');
+  const [commitmentFlexPreference, setCommitmentFlexPreference] = useState('early_morning');
   const [commitmentDays, setCommitmentDays] = useState([]);
   const [commitmentScheduleType, setCommitmentScheduleType] = useState('recurring');
   const [commitmentSpecificDate, setCommitmentSpecificDate] = useState('');
@@ -250,7 +249,7 @@ function App() {
   const [editCommitmentCommuteTimeFrom, setEditCommitmentCommuteTimeFrom] = useState(0);
   const [editCommitmentTimeMode, setEditCommitmentTimeMode] = useState('fixed');
   const [editCommitmentFlexDuration, setEditCommitmentFlexDuration] = useState(60);
-  const [editCommitmentFlexPreference, setEditCommitmentFlexPreference] = useState('any');
+  const [editCommitmentFlexPreference, setEditCommitmentFlexPreference] = useState('early_morning');
   const [editCommitmentDays, setEditCommitmentDays] = useState([]);
   const [editCommitmentScheduleType, setEditCommitmentScheduleType] = useState('recurring');
   const [editCommitmentSpecificDate, setEditCommitmentSpecificDate] = useState('');
@@ -319,29 +318,54 @@ function App() {
     });
   };
 
+  const fetchJsonOrLogout = (url, fallback) => {
+    return authFetch(url)
+      .then((res) => {
+        if (res.status === 401) {
+          handleLogout();
+          return fallback;
+        }
+        if (!res.ok) {
+          throw new Error(`Request failed: ${res.status}`);
+        }
+        return res.json();
+      })
+      .catch((err) => {
+        console.error(`Failed to load ${url}:`, err);
+        return fallback;
+      });
+  };
+
   // ── Load data on mount ──
   useEffect(() => {
     if (!token) {
       return;
     }
-    authFetch(`${process.env.REACT_APP_API_URL}/tasks`)
-      .then((res) => res.json()).then(setTasks)
-      .catch((err) => console.error('Failed to load tasks:', err));
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/tasks`, []).then(setTasks);
 
-    authFetch(`${process.env.REACT_APP_API_URL}/history`)
-      .then((res) => res.json()).then(setHistory)
-      .catch((err) => console.error('Failed to load history:', err));
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/history`, []).then(setHistory);
 
-    authFetch(`${process.env.REACT_APP_API_URL}/meals`)
-      .then((res) => res.json()).then(setMeals)
-      .catch((err) => console.error('Failed to load meals:', err));
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/meals`, []).then(setMeals);
 
-    authFetch(`${process.env.REACT_APP_API_URL}/commitments`)
-      .then((res) => res.json()).then(setCommitments)
-      .catch((err) => console.error('Failed to load commitments:', err));
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/commitments`, [])
+      .then((data) => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const expired = data.filter((c) => {
+          if (!c.specificDate) {
+            return false;
+          }
+          const commitDate = new Date(c.specificDate + 'T00:00:00');
+          return commitDate < today;
+        });
+        expired.forEach((c) => {
+          authFetch(`${process.env.REACT_APP_API_URL}/commitments/${c.id}`, { method: 'DELETE' })
+            .catch((err) => console.error('Failed to delete expired commitment:', err));
+        });
+        setCommitments(data.filter((c) => !expired.some((e) => e.id === c.id)));
+      });
 
-    authFetch(`${process.env.REACT_APP_API_URL}/sleep`)
-      .then((res) => res.json())
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/sleep`, null)
       .then((data) => {
         if (data) {
           setWakeTime(data.wakeTime);
@@ -354,11 +378,9 @@ function App() {
             setActualSleepTime(data.actual_sleep);
           }
         }
-      })
-      .catch((err) => console.error('Failed to load sleep schedule:', err));
+      });
 
-    authFetch(`${process.env.REACT_APP_API_URL}/settings`)
-      .then((res) => res.json())
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/settings`, {})
       .then((data) => {
         if (data.clockFormat) { 
           setSavedClockFormat(data.clockFormat); 
@@ -396,8 +418,8 @@ function App() {
           setSavedFontSize(data.fontSize);
           setFontSize(data.fontSize);
         }
-      })
-      .catch((err) => console.error('Failed to load settings:', err));
+      });
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
   
@@ -635,7 +657,54 @@ function App() {
       }
     });
 
-    return blocks.sort((a, b) => a.start.localeCompare(b.start));
+    const sorted = blocks.sort((a, b) => a.start.localeCompare(b.start));
+    const withGaps = [];
+    for (let i = 0; i < sorted.length; i++) {
+      withGaps.push(sorted[i]);
+      if (i < sorted.length - 1) {
+        const thisEnd = sorted[i].end;
+        const nextStart = sorted[i + 1].start;
+        if (nextStart > thisEnd) {
+          const toMin = (t) => {
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+          };
+          const gapMinutes = toMin(nextStart) - toMin(thisEnd);
+          if (gapMinutes <= savedTransitionGap) {
+            withGaps.push({
+              label: 'Transition',
+              start: thisEnd,
+              end: nextStart,
+              category: 'free',
+              location: null,
+            });
+          }
+        }
+      }
+    }
+    return withGaps;
+  }
+
+  function getDaySummary(date) {
+    const blocks = getBlocksForDay(date);
+    const toMin = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
+    const taskBlocks = blocks.filter((b) => b.category === 'task');
+    const totalTaskTime = taskBlocks.reduce((sum, b) => sum + (toMin(b.end) - toMin(b.start)), 0);
+    const scheduledTaskNames = [...new Set(taskBlocks.map((b) => b.label))];
+    const wake = wakeTime ? toMin(wakeTime) : 0;
+    const sleep = sleepTime ? toMin(sleepTime) : 1440;
+    const awakeMinutes = sleep > wake ? sleep - wake : (sleep + 1440) - wake;
+    const occupiedMinutes = blocks
+      .filter((b) => b.category !== 'sleep')
+      .reduce((sum, b) => {
+        const dur = toMin(b.end) - toMin(b.start);
+        return sum + Math.max(0, dur);
+      }, 0);
+    const freeTime = Math.max(0, awakeMinutes - occupiedMinutes);
+    return { totalTaskTime, freeTime, scheduledTaskNames };
   }
 
   function getBlockTopPercent(timeStr) {
@@ -1197,13 +1266,13 @@ function App() {
         return { start: 9 * 60, end: 12 * 60 };
       }
       if (preference === 'afternoon') {
-        return { start: 12 * 60, end: 17 * 60 };
+        return { start: 12 * 60, end: 15 * 60 };
       }
       if (preference === 'evening') {
-        return { start: 17 * 60, end: 21 * 60 };
+        return { start: 15 * 60, end: 18 * 60 };
       }
       if (preference === 'night') {
-        return { start: 21 * 60, end: sleep };
+        return { start: 18 * 60, end: sleep };
       }
       return { start: wake, end: sleep };
     };
@@ -1221,7 +1290,19 @@ function App() {
       const window = getPreferenceWindow(preference);
       const windowStart = Math.max(wake, window.start);
       const windowEnd = Math.min(sleep, window.end);
-      let start = getNextFreeStart(windowStart);
+
+      const fits = (paddedStart) => {
+        if (paddedStart < wake || paddedStart + totalDuration > sleep) {
+          return false;
+        }
+        if (isOccupied(paddedStart, paddedStart + totalDuration)) {
+          return false;
+        }
+        if (type === 'meal' && isTooCloseToMeal(paddedStart, paddedStart + totalDuration)) {
+          return false;
+        }
+        return true;
+      };
 
       const tryPlace = (t) => {
         if (commuteTo > 0) {
@@ -1233,30 +1314,42 @@ function App() {
         }
       };
 
-      while (start + totalDuration <= windowEnd) {
-        if (!isOccupied(start, start + totalDuration) && (type !== 'meal' || !isTooCloseToMeal(start, start + totalDuration))) {
-          tryPlace(start); return true;
+      // Pass 1: within the preferred window
+      for (let t = windowStart; t + totalDuration <= windowEnd; t++) {
+        if (fits(t)) {
+          tryPlace(t);
+          return true;
         }
-        start++;
       }
 
-      // Fallback: try other windows in sensible order
-      const fallbackPreferences = ['evening', 'afternoon', 'morning', 'early_morning', 'night'];
-      for (const pref of fallbackPreferences) {
-        if (pref === preference) {
-          continue;
-        }
-        const w = getPreferenceWindow(pref);
-        const wStart = Math.max(wake, w.start); const wEnd = Math.min(sleep, w.end);
-        let t = getNextFreeStart(wStart);
-        while (t + totalDuration <= wEnd) {
-          if (!isOccupied(t, t + totalDuration) && (type !== 'meal' || !isTooCloseToMeal(t, t + totalDuration))) {
-            tryPlace(t); 
+      // Pass 2: expand outward from the window in both directions
+      const anchor = windowStart;
+      let after = anchor + 1;
+      let before = anchor - 1;
+      let beforeExhausted = false;
+      let safety = 0;
+      while (safety < 3000 && (after + totalDuration <= sleep || !beforeExhausted)) {
+        safety++;
+        if (after + totalDuration <= sleep) {
+          if (fits(after)) {
+            tryPlace(after);
             return true;
           }
-          t++;
+          after++;
+        }
+        if (!beforeExhausted) {
+          if (before >= wake) {
+            if (fits(before)) {
+              tryPlace(before);
+              return true;
+            }
+            before--;
+          } else {
+            beforeExhausted = true;
+          }
         }
       }
+
       return false;
     };
 
@@ -1283,9 +1376,10 @@ function App() {
       }
     }
 
-    // Place tasks: weighted random selection per work session (urgency + difficulty weighted),
-    // avoiding draining one task to completion before starting another.
-    const availableTasks = tasks.filter((t) => t.completion_status !== 'Completed' && !isBlocked(t) && t.duration && Number(t.duration) > 0);
+    // ── Task scheduling ──────────────────────────────────────────────────────
+    const availableTasks = tasks.filter(
+      (t) => t.completion_status !== 'Completed' && !isBlocked(t) && t.duration && Number(t.duration) > 0
+    );
 
     const remainingByTask = {};
     availableTasks.forEach((t) => {
@@ -1293,16 +1387,19 @@ function App() {
       remainingByTask[t.id] = Math.round(Number(t.duration) * multiplier);
     });
 
-    const getTaskWeight = (task) => {
-      // Reuses your existing priority score (urgency, importance, preference, difficulty, consistency)
-      return Math.max(0.1, Number(calculatePriorityScore(task)));
+    const getTaskWeight = (task, previousTaskId) => {
+      let weight = Math.max(0.1, Number(calculatePriorityScore(task)));
+      if (previousTaskId !== null && task.id === previousTaskId) {
+        weight *= 0.25; // soft penalty, not a hard exclusion — still eligible, just less likely
+      }
+      return weight;
     };
 
-    const pickWeightedTask = (pool) => {
+    const pickWeightedTask = (pool, previousTaskId = null) => {
       if (pool.length === 0) {
         return null;
       }
-      const weights = pool.map(getTaskWeight);
+      const weights = pool.map((t) => getTaskWeight(t, previousTaskId));
       const totalWeight = weights.reduce((sum, w) => sum + w, 0);
       let roll = Math.random() * totalWeight;
       for (let i = 0; i < pool.length; i++) {
@@ -1316,7 +1413,10 @@ function App() {
 
     const isOccupiedAt = (s, e) => schedule.some((b) => s < blockToMin(b.end) && e > blockToMin(b.start));
 
-    let currentTime = getNextFreeStart(wake);
+    const firstBlockedEnd = blockedRanges.length > 0
+      ? Math.max(...blockedRanges.map((b) => b.end))
+      : wake;
+    let currentTime = getNextFreeStart(Math.max(wake, firstBlockedEnd > wake ? firstBlockedEnd + savedTransitionGap : wake));
     let previousTaskId = null;
     let previousTaskType = null;
     let safetyCounter = 0;
@@ -1329,10 +1429,7 @@ function App() {
       if (pool.length === 0) {
         break;
       }
-      const poolExcludingPrevious = pool.filter((t) => t.id !== lastTaskId);
-      const selectionPool = poolExcludingPrevious.length > 0 ? poolExcludingPrevious : pool;
-
-      const task = pickWeightedTask(selectionPool);
+      const task = pickWeightedTask(pool, lastTaskId);
       if (!task) {
         break;
       }
@@ -1340,11 +1437,7 @@ function App() {
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
       const sessionLength = Math.min(remainingByTask[task.id], limit);
 
-      if (previousTaskId !== null) {
-        currentTime = getNextFreeStart(currentTime + savedTransitionGap);
-      } else {
-        currentTime = getNextFreeStart(currentTime);
-      }
+      currentTime = getNextFreeStart(currentTime + savedTransitionGap);
       if (currentTime >= sleep) {
         break;
       }
@@ -1375,10 +1468,7 @@ function App() {
 
       // Break logic: only force a break if the NEXT session would be the same task,
       // or if this was a deep-work task hitting its max block length.
-      const switchingTasks = task.id !== previousTaskId;
-      const hitDeepLimit = task.taskType === 'deep' && blockSize >= limit;
-
-      if (!switchingTasks || hitDeepLimit) {
+      if (task.taskType === 'deep') {
         const breakLength = Math.max(15, Math.round(blockSize * 0.15));
         const breakEnd = Math.min(currentTime + breakLength, sleep);
         if (!isOccupiedAt(currentTime, breakEnd) && breakEnd > currentTime) {
@@ -1395,12 +1485,13 @@ function App() {
       previousTaskType = task.taskType;
     }
     
-    // Fill short gaps (≥15 min) with light tasks
-    const lightPool = availableTasks.filter((t) => t.taskType === 'light' && remainingByTask[t.id] > 0);
-    if (lightPool.length > 0) {
+    // Fill remaining gaps using weighted selection, respecting max block length
+    const fillPool = availableTasks.filter((t) => remainingByTask[t.id] > 0);
+    if (fillPool.length > 0) {
       let scanTime = wake;
       let fillSafety = 0;
-      while (scanTime < sleep && fillSafety < 500) {
+      let previousFillTaskId = null;
+      while (scanTime < sleep && fillSafety < 1000) {
         fillSafety++;
         if (isOccupiedAt(scanTime, scanTime + 1)) {
           scanTime++;
@@ -1410,14 +1501,37 @@ function App() {
         while (gapEnd < sleep && !isOccupiedAt(gapEnd, gapEnd + 1)) {
           gapEnd++;
         }
-        const gapSize = gapEnd - scanTime;
-        if (gapSize >= 15) {
-          const fillTask = lightPool.find((t) => remainingByTask[t.id] > 0);
-          if (fillTask) {
-            const fillSize = Math.min(remainingByTask[fillTask.id], gapSize);
-            schedule.push({ start: toTimeString(scanTime), end: toTimeString(scanTime + fillSize), label: fillTask.taskName, type: 'study' });
-            remainingByTask[fillTask.id] -= fillSize;
+        let gapCursor = scanTime;
+        while (gapEnd - gapCursor >= savedTransitionGap * 2) {
+          const pool = fillPool.filter((t) => remainingByTask[t.id] > 0);
+          if (pool.length === 0) {
+            break;
           }
+          const fillTask = pickWeightedTask(pool, previousFillTaskId);
+          if (!fillTask) {
+            break;
+          }
+          const fillStart = gapCursor + savedTransitionGap;
+          const remainingGap = gapEnd - fillStart;
+          if (remainingGap < 15) {
+            break;
+          }
+          const limit = fillTask.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
+          const fillSize = Math.min(remainingByTask[fillTask.id], limit, remainingGap);
+          schedule.push({ start: toTimeString(fillStart), end: toTimeString(fillStart + fillSize), label: fillTask.taskName, type: isInPeak(fillStart) ? 'peak' : 'study', taskType: fillTask.taskType });
+          remainingByTask[fillTask.id] -= fillSize;
+
+          let cursor = fillStart + fillSize;
+          if (fillTask.taskType === 'deep') {
+            const breakLength = Math.max(15, Math.round(fillSize * 0.15));
+            const breakEnd = Math.min(cursor + breakLength, gapEnd);
+            if (breakEnd > cursor) {
+              schedule.push({ start: toTimeString(cursor), end: toTimeString(breakEnd), label: 'Break', type: 'break' });
+              cursor = breakEnd;
+            }
+          }
+          previousFillTaskId = fillTask.id;
+          gapCursor = cursor;
         }
         scanTime = gapEnd + 1;
       }
@@ -1523,6 +1637,54 @@ function App() {
     setWeekSchedule(newWeekSchedule);
     setGeneratedSchedule(activeDaySchedule);
     setScheduleSummary(generateScheduleSummary(activeDaySchedule));
+  }
+
+  function exportScheduleAsText(date) {
+    const blocks = getBlocksForDay(date);
+    if (blocks.length === 0) {
+      return;
+    }
+    const dateLabel = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    const lines = [`Atlas Schedule — ${dateLabel}`, ''];
+    blocks.forEach((block) => {
+      lines.push(`${formatTime(block.start)} – ${formatTime(block.end)}  ${block.label}`);
+    });
+    navigator.clipboard.writeText(lines.join('\n'))
+      .then(() => alert('Schedule copied to clipboard!'))
+      .catch(() => alert('Could not copy — try selecting the text manually.'));
+  }
+
+  function exportScheduleAsIcs(date) {
+    const blocks = getBlocksForDay(date);
+    if (blocks.length === 0) {
+      return;
+    }
+    const pad = (n) => String(n).padStart(2, '0');
+    const toIcsDate = (dateObj, timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return `${dateObj.getFullYear()}${pad(dateObj.getMonth() + 1)}${pad(dateObj.getDate())}T${pad(h)}${pad(m)}00`;
+    };
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Atlas//Schedule//EN',
+    ];
+    blocks.forEach((block, i) => {
+      lines.push('BEGIN:VEVENT');
+      lines.push(`UID:atlas-${date.toDateString().replace(/\s/g, '')}-${i}@atlas`);
+      lines.push(`DTSTART:${toIcsDate(date, block.start)}`);
+      lines.push(`DTEND:${toIcsDate(date, block.end)}`);
+      lines.push(`SUMMARY:${block.label}`);
+      lines.push('END:VEVENT');
+    });
+    lines.push('END:VCALENDAR');
+    const blob = new Blob([lines.join('\r\n')], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `atlas-${date.toISOString().split('T')[0]}.ics`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2526,6 +2688,40 @@ function App() {
 
               <div className="day-timeline" style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                 {(() => {
+                  const summary = getDaySummary(selectedDay);
+                  const hasSchedule = (weekSchedule[selectedDay.toDateString()] || []).length > 0;
+                  if (!hasSchedule) {
+                    return null;
+                  }
+                  const formatDur = (mins) => {
+                    const h = Math.floor(mins / 60);
+                    const m = mins % 60;
+                    if (h === 0) {
+                      return `${m}m`;
+                    }
+                    if (m === 0) {
+                      return `${h}h`;
+                    }
+                    return `${h}h ${m}m`;
+                  };
+                  return (
+                    <div className="card" style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: '8px 4px', background: 'var(--cat-task)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--cat-task-text)' }}>{formatDur(summary.totalTaskTime)}</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--cat-task-text)', opacity: 0.75 }}>Task time</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: '8px 4px', background: 'var(--cat-free)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--cat-free-text)' }}>{formatDur(summary.freeTime)}</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--cat-free-text)', opacity: 0.75 }}>Free time</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 80, textAlign: 'center', padding: '8px 4px', background: 'var(--cat-commitment)', borderRadius: 'var(--radius-md)' }}>
+                        <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--cat-commitment-text)' }}>{summary.scheduledTaskNames.length}</div>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--cat-commitment-text)', opacity: 0.75 }}>Tasks</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {(() => {
                   const blocks = getBlocksForDay(selectedDay);
                   if (blocks.length === 0) {
                     return (
@@ -2689,7 +2885,7 @@ function App() {
           )}
 
           {/* Generate schedule button */}
-          <div style={{ padding: '10px 14px 0' }}>
+          <div style={{ padding: '10px 14px 0', display: 'flex', flexDirection: 'column', gap: 8 }}>
             <button className="btn-primary" type="button" onClick={handleGenerateSchedule}>
               {scheduleView === 'day'
                 ? `Generate ${isToday(selectedDay) ? "today's" : selectedDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} schedule`
@@ -2697,6 +2893,18 @@ function App() {
                   ? 'Generate this week\'s schedule'
                   : `Generate ${getMonthLabel()} schedule`}
             </button>
+            {(weekSchedule[selectedDay.toDateString()] || []).length > 0 && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn-secondary" type="button" style={{ flex: 1 }}
+                  onClick={() => exportScheduleAsText(selectedDay)}>
+                  📋 Copy as text
+                </button>
+                <button className="btn-secondary" type="button" style={{ flex: 1 }}
+                  onClick={() => exportScheduleAsIcs(selectedDay)}>
+                  📅 Export .ics
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
