@@ -2253,144 +2253,6 @@ function App() {
   const hasConflict = userOverrideType !== null && userOverrideType !== autoTaskType;
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // AUTH SCREEN
-  // ─────────────────────────────────────────────────────────────────────────────
-  if (resetToken) {
-    return (
-      <div>
-        <h1>Atlas</h1>
-        <h2>Reset Your Password</h2>
-        {resetMessage ? (
-          <div>
-            <p style={{ color: 'green' }}>{resetMessage}</p>
-            <button type="button" onClick={() => setResetMessage('')}>Back to Login</button>
-          </div>
-        ) : (
-          <div>
-            {resetError && <p style={{ color: 'red' }}>{resetError}</p>}
-            <div>
-              <label>New Password: </label>
-              <input type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
-            </div>
-            <div>
-              <label>Confirm New Password: </label>
-              <input type="password" value={resetConfirmPassword} onChange={(e) => setResetConfirmPassword(e.target.value)} />
-            </div>
-            <button type="button" onClick={handleResetPassword}>Reset Password</button>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  if (!token) {
-    if (forgotMode) {
-      return (
-        <div>
-          <h1>Atlas</h1>
-          <h2>{forgotMode === 'password' ? 'Forgot Password' : 'Forgot Username'}</h2>
-          {forgotMessage ? (
-            <div>
-              <p>{forgotMessage}</p>
-              <button type="button" onClick={() => { 
-                setForgotMode(null); 
-                setForgotEmail(''); 
-                setForgotMessage(''); 
-              }}>
-                Back to Login
-              </button>
-            </div>
-          ) : (
-            <div>
-              <p>Enter the email address associated with your account.</p>
-              <div>
-                <label>Email: </label>
-                <input type="email" value={forgotEmail} onChange={(e) => setForgotEmail(e.target.value)} />
-              </div>
-              <button type="button" onClick={handleForgotSubmit}>
-                {forgotMode === 'password' ? 'Send Reset Link' : 'Send Username'}
-              </button>
-              <p>
-                <button type="button" onClick={() => { 
-                  setForgotMode(null); 
-                  setForgotEmail(''); 
-                  setForgotMessage(''); 
-                }}>
-                  Back to Login
-                </button>
-              </p>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div>
-        <h1>Atlas</h1>
-        <h2>{authMode === 'login' ? 'Log In' : 'Create Account'}</h2>
-        {authError && <p style={{ color: 'red' }}>{authError}</p>}
-        {authMode === 'register' && (
-          <div>
-            <label>Email: </label>
-            <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} />
-          </div>
-        )}
-        <div>
-          <label>Username: </label>
-          <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} />
-        </div>
-        <div>
-          <label>Password: </label>
-          <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} />
-        </div>
-        {authMode === 'login' ? (
-          <div>
-            <button type="button" onClick={handleLogin}>Log In</button>
-            <p>
-              <button type="button" onClick={() => { 
-                setForgotMode('username'); 
-                setAuthError(''); 
-              }}>
-                Forgot username?
-              </button>
-              {' · '}
-              <button type="button" onClick={() => { 
-                setForgotMode('password'); 
-                setAuthError(''); 
-              }}>
-                Forgot password?
-              </button>
-            </p>
-            <p>
-              Don't have an account? 
-              <button type="button" onClick={() => { 
-                setAuthMode('register'); 
-                setAuthError(''); 
-              }}>
-                Create one
-              </button>
-            </p>
-          </div>
-        ) : (
-          <div>
-            <button type="button" onClick={handleRegister}>Create Account</button>
-            <p>
-              Already have an account? 
-              <button type="button" onClick={() => { 
-                setAuthMode('login'); 
-                setAuthError(''); 
-              }}>
-                Log in
-              </button>
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────────
   // MAIN APP
   // ─────────────────────────────────────────────────────────────────────────────
   const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -2457,7 +2319,10 @@ function App() {
     );
   }
 
-  // ── Auth screen ──
+  // ─────────────────────────────────────────────────────────────────────────────
+  // AUTH SCREEN
+  // ─────────────────────────────────────────────────────────────────────────────
+
   if (!token) {
     if (forgotMode) {
       return (
@@ -2499,67 +2364,77 @@ function App() {
     }
 
     return (
-      <div className="app" style={{ justifyContent: 'center', alignItems: 'center', padding: '32px 24px' }}>
-        <img src={logo} alt="Atlas logo" style={{ width: 56, marginBottom: 8, borderRadius: 14 }} />
-        <h1 style={{ fontWeight: 700, fontSize: 28, marginBottom: 4 }}>Atlas</h1>
-        <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 28 }}>Your AI-powered daily planner</p>
-        <div className="card" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>{authMode === 'login' ? 'Welcome back' : 'Create account'}</h2>
-          {authError && <p style={{ color: '#c0392b', fontSize: 13 }}>{authError}</p>}
-          {authMode === 'register' && (
-            <>
-              <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Email</label>
-              <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@email.com" />
-            </>
-          )}
-          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Username</label>
-          <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="username" />
-          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Password</label>
-          <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••"
-            onKeyDown={(e) => { 
-              if (e.key === 'Enter') { 
-                authMode === 'login' ? handleLogin() : handleRegister(); 
-              } 
-            }} 
-          />
-          {authMode === 'login' ? (
-            <>
-              <button className="btn-primary" type="button" onClick={handleLogin} style={{ marginTop: 8 }}>Log in</button>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+      <div className="app" style={{ 
+        justifyContent: 'flex-start',
+        alignItems: 'flex-start',
+        padding: '48px 24px', 
+        minHeight: '100vh',
+        height: 'auto',
+        overflowY: 'auto'
+      }}>
+        <div style={{ width: '100%', maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img src={logo} alt="Atlas logo" style={{ width: 56, marginBottom: 8, borderRadius: 14 }} />
+          <h1 style={{ fontWeight: 700, fontSize: 28, marginBottom: 4 }}>Atlas</h1>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 40 }}>Your AI-powered daily planner</p>
+          <div className="card" style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <h2 style={{ fontWeight: 700, fontSize: 18, marginBottom: 4 }}>{authMode === 'login' ? 'Welcome back' : 'Create account'}</h2>
+            {authError && <p style={{ color: '#c0392b', fontSize: 13 }}>{authError}</p>}
+            {authMode === 'register' && (
+              <>
+                <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Email</label>
+                <input type="email" value={authEmail} onChange={(e) => setAuthEmail(e.target.value)} placeholder="you@email.com" />
+              </>
+            )}
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Username</label>
+            <input type="text" value={authUsername} onChange={(e) => setAuthUsername(e.target.value)} placeholder="username" />
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Password</label>
+            <input type="password" value={authPassword} onChange={(e) => setAuthPassword(e.target.value)} placeholder="••••••••"
+              onKeyDown={(e) => { 
+                if (e.key === 'Enter') { 
+                  authMode === 'login' ? handleLogin() : handleRegister(); 
+                } 
+              }} 
+            />
+            {authMode === 'login' ? (
+              <>
+                <button className="btn-primary" type="button" onClick={handleLogin} style={{ marginTop: 8 }}>Log in</button>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                  <button className="btn-secondary" type="button" onClick={() => { 
+                    setForgotMode('username'); 
+                    setAuthError(''); 
+                  }}>
+                    Forgot username?
+                  </button>
+                  <button className="btn-secondary" type="button" onClick={() => { 
+                    setForgotMode('password'); 
+                    setAuthError(''); 
+                  }}>
+                    Forgot password?
+                  </button>
+                </div>
+                <div className="divider" />
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: -4 }}>Don't have an account?</p>
                 <button className="btn-secondary" type="button" onClick={() => { 
-                  setForgotMode('username'); 
+                  setAuthMode('register'); 
                   setAuthError(''); 
                 }}>
-                  Forgot username?
+                  Create an account
                 </button>
+              </>
+            ) : (
+              <>
+                <button className="btn-primary" type="button" onClick={handleRegister} style={{ marginTop: 8 }}>Create account</button>
+                <div className="divider" />
+                <p>Already have an account? </p>
                 <button className="btn-secondary" type="button" onClick={() => { 
-                  setForgotMode('password'); 
+                  setAuthMode('login'); 
                   setAuthError(''); 
                 }}>
-                  Forgot password?
+                  Log in
                 </button>
-              </div>
-              <div className="divider" />
-              <button className="btn-secondary" type="button" onClick={() => { 
-                setAuthMode('register'); 
-                setAuthError(''); 
-              }}>
-                Create an account
-              </button>
-            </>
-          ) : (
-            <>
-              <button className="btn-primary" type="button" onClick={handleRegister} style={{ marginTop: 8 }}>Create account</button>
-              <div className="divider" />
-              <p>Already have an account? </p>
-              <button className="btn-secondary" type="button" onClick={() => { 
-                setAuthMode('login'); 
-                setAuthError(''); 
-              }}>
-                Log in
-              </button>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     );
