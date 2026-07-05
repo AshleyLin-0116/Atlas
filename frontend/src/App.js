@@ -305,6 +305,10 @@ function App() {
   const [savedNotifyLeadMinutes, setSavedNotifyLeadMinutes] = useState(10);
   const [notifyTypes, setNotifyTypes] = useState(['study', 'peak', 'meal', 'commitment']);
   const [savedNotifyTypes, setSavedNotifyTypes] = useState(['study', 'peak', 'meal', 'commitment']);
+  const [canvasDomain, setCanvasDomain] = useState('');
+  const [canvasToken, setCanvasToken] = useState('');
+  const [canvasStatus, setCanvasStatus] = useState({ connected: false });
+  const [canvasSyncMessage, setCanvasSyncMessage] = useState('');
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -2450,6 +2454,42 @@ function App() {
     setNotificationsEnabled(false);
   }
 
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/canvas/status`, { connected: false })
+      .then(setCanvasStatus);
+  }, [token]);
+
+  function handleConnectCanvas() {
+    authFetch(`${process.env.REACT_APP_API_URL}/canvas/connect`, {
+      method: 'POST',
+      body: JSON.stringify({ canvas_domain: canvasDomain.trim(), access_token: canvasToken.trim() })
+    })
+      .then((res) => res.json())
+      .then(() => {
+        setCanvasStatus({ connected: true, domain: canvasDomain.trim() });
+        setCanvasToken('');
+      })
+      .catch((err) => console.error('Failed to connect Canvas:', err));
+  }
+
+  function handleSyncCanvas() {
+    setCanvasSyncMessage('Syncing...');
+    Promise.all([
+      authFetch(`${process.env.REACT_APP_API_URL}/canvas/sync/assignments`, { method: 'POST' }).then((r) => r.json()),
+      authFetch(`${process.env.REACT_APP_API_URL}/canvas/sync/schedule`, { method: 'POST' }).then((r) => r.json())
+    ])
+      .then(([assignments, schedule]) => {
+        setCanvasSyncMessage(`Imported ${assignments.created} new assignments, ${schedule.created} new classes.`);
+        // reload tasks/commitments from server
+        fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/tasks`, []).then(setTasks);
+        fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/commitments`, []).then(setCommitments);
+      })
+      .catch(() => setCanvasSyncMessage('Sync failed — check your token and try again.'));
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // DERIVED STATE
   // ─────────────────────────────────────────────────────────────────────────────
@@ -3863,6 +3903,30 @@ function App() {
             }}>
               Save notification settings
             </button>
+          </div>
+
+          <div className="section-label">Canvas</div>
+          <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {canvasStatus.connected ? (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--brand)' }}>Connected to {canvasStatus.domain}</p>
+                <button className="btn-primary" type="button" onClick={handleSyncCanvas}>Sync now</button>
+                {canvasSyncMessage && <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{canvasSyncMessage}</p>}
+                <button className="btn-secondary" type="button" onClick={() => {
+                  authFetch(`${process.env.REACT_APP_API_URL}/canvas/disconnect`, { method: 'DELETE' })
+                    .then(() => setCanvasStatus({ connected: false }));
+                }}>Disconnect Canvas</button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Generate an access token in Canvas under Account → Settings → New Access Token.
+                </p>
+                <input type="text" placeholder="Canvas domain (e.g. wisc.instructure.com)" value={canvasDomain} onChange={(e) => setCanvasDomain(e.target.value)} />
+                <input type="password" placeholder="Access token" value={canvasToken} onChange={(e) => setCanvasToken(e.target.value)} />
+                <button className="btn-primary" type="button" onClick={handleConnectCanvas}>Connect Canvas</button>
+              </>
+            )}
           </div>
 
           <div className="section-label">Custom keywords</div>

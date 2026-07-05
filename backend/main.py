@@ -280,6 +280,20 @@ def init_db():
             UNIQUE(user_id, schedule_date)
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS canvas_credentials (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            canvas_domain TEXT NOT NULL,
+            access_token TEXT NOT NULL,
+            connected_at TEXT DEFAULT (now()::text)
+        )
+    """)
+    cur.execute("""
+        ALTER TABLE tasks ADD COLUMN IF NOT EXISTS externalId TEXT
+    """)
+    cur.execute("""
+        ALTER TABLE commitments ADD COLUMN IF NOT EXISTS externalId TEXT
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -477,6 +491,35 @@ class Setting(BaseModel):
 class ScheduleSave(BaseModel):
     date: str
     blocks: list
+
+class CanvasCredentials(BaseModel):
+    canvas_domain: str
+    access_token: str
+
+# ─── API HELPERS ───────────────────────────────────────────────────────────────────
+
+async def canvas_get(domain: str, token: str, path: str, params: dict = None):
+    """Fetch a single Canvas API page. Canvas paginates — caller handles the Link header if needed."""
+    url = f"https://{domain}/api/v1{path}"
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            url,
+            headers={"Authorization": f"Bearer {token}"},
+            params=params or {},
+            timeout=15.0
+        )
+        if response.status_code == 401:
+            raise HTTPException(status_code=401, detail="Canvas token is invalid or expired")
+        if not response.is_success:
+            raise HTTPException(status_code=502, detail=f"Canvas API error: {response.status_code}")
+        return response.json()
+
+def get_canvas_creds(user_id: int, cur):
+    cur.execute("SELECT canvas_domain, access_token FROM canvas_credentials WHERE user_id = %s", (user_id,))
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Canvas is not connected")
+    return row["canvas_domain"], row["access_token"]
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
 
@@ -1310,3 +1353,174 @@ def save_schedule(body: ScheduleSave, user_id: int = Depends(get_current_user)):
     cur.close()
     conn.close()
     return {"message": "Schedule saved"}
+
+# ── Import/Export ──
+
+@app.post("/canvas/connect")
+def connect_canvas(creds: CanvasCredentials, user_id: int = Depends(get_current_user)):
+    domain = creds.canvas_domain.strip().replace("https://", "").replace("http://", "").rstrip("/")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO canvas_credentials (user_id, canvas_domain, access_token)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET canvas_domain = EXCLUDED.canvas_domain, access_token = EXCLUDED.access_token""",
+        (user_id, domain, creds.access_token)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Canvas connected"}
+
+@app.delete("/canvas/disconnect")
+def disconnect_canvas(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM canvas_credentials WHERE user_id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Canvas disconnected"}
+
+@app.get("/canvas/status")
+def canvas_status(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT canvas_domain, connected_at FROM canvas_credentials WHERE user_id = %s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return {"connected": False}
+    return {"connected": True, "domain": row["canvas_domain"], "connected_at": row["connected_at"]}
+
+CANVAS_CATEGORY_MAP_DEFAULT = "Homework"
+
+@app.post("/canvas/sync/assignments")
+async def sync_canvas_assignments(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    domain, token = get_canvas_creds(user_id, cur)
+
+    courses = await canvas_get(domain, token, "/courses", {"enrollment_state": "active", "per_page": 100})
+
+    created, updated, skipped = 0, 0, 0
+
+    for course in courses:
+        course_id = course.get("id")
+        course_name = course.get("name") or f"Course {course_id}"
+        try:
+            assignments = await canvas_get(
+                domain, token, f"/courses/{course_id}/assignments",
+                {"per_page": 100, "order_by": "due_at"}
+            )
+        except HTTPException:
+            continue  # some courses restrict assignment access; skip rather than fail the whole sync
+
+        for a in assignments:
+            due_at = a.get("due_at")
+            if not due_at:
+                skipped += 1
+                continue  # no deadline — nothing meaningful to schedule against
+
+            deadline = due_at.split("T")[0]
+            external_id = f"canvas-assignment-{a['id']}"
+            task_name = a.get("name", "Untitled assignment")
+
+            cur.execute(
+                "SELECT id FROM tasks WHERE externalId = %s AND user_id = %s",
+                (external_id, user_id)
+            )
+            existing = cur.fetchone()
+
+            if existing:
+                cur.execute(
+                    "UPDATE tasks SET taskName = %s, deadline = %s WHERE id = %s AND user_id = %s",
+                    (task_name, deadline, existing["id"], user_id)
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO tasks
+                    (user_id, taskName, deadline, difficulty, importance, userPreference,
+                    duration, taskType, category, workOnDueDate, description, externalId)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (user_id, task_name, deadline, 5, 5, 5,
+                    60, 'deep', CANVAS_CATEGORY_MAP_DEFAULT, True,
+                    f"Imported from {course_name}", external_id)
+                )
+                created += 1
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Assignments synced", "created": created, "updated": updated, "skipped": skipped}
+
+@app.post("/canvas/sync/schedule")
+async def sync_canvas_schedule(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    domain, token = get_canvas_creds(user_id, cur)
+
+    courses = await canvas_get(domain, token, "/courses", {"enrollment_state": "active", "per_page": 100})
+
+    created, updated, skipped = 0, 0, 0
+
+    for course in courses:
+        course_id = course.get("id")
+        course_name = course.get("name") or f"Course {course_id}"
+
+        # Canvas exposes recurring meeting info differently per school; the calendar_events
+        # feed with type=event catches recurring lecture blocks for most Canvas configs.
+        try:
+            events = await canvas_get(
+                domain, token, "/calendar_events",
+                {"type": "event", "context_codes[]": f"course_{course_id}", "per_page": 100}
+            )
+        except HTTPException:
+            continue
+
+        if not events:
+            skipped += 1
+            continue
+
+        for e in events:
+            start_at = e.get("start_at")
+            end_at = e.get("end_at")
+            if not start_at or not end_at:
+                continue
+
+            start_time = start_at.split("T")[1][:5]
+            end_time = end_at.split("T")[1][:5]
+            weekday_full = datetime.fromisoformat(start_at.replace("Z", "+00:00")).strftime("%A")
+            external_id = f"canvas-course-{course_id}-{weekday_full}-{start_time}"
+
+            cur.execute(
+                "SELECT id FROM commitments WHERE externalId = %s AND user_id = %s",
+                (external_id, user_id)
+            )
+            existing = cur.fetchone()
+
+            if existing:
+                cur.execute(
+                    """UPDATE commitments SET commitmentStart = %s, commitmentEnd = %s
+                    WHERE id = %s AND user_id = %s""",
+                    (start_time, end_time, existing["id"], user_id)
+                )
+                updated += 1
+            else:
+                cur.execute(
+                    """INSERT INTO commitments
+                    (user_id, commitmentName, commitmentStart, commitmentEnd, commitmentType,
+                    timeMode, days, repeatUntilType, startDate, externalId)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (user_id, course_name, start_time, end_time, "Lecture / Class",
+                    "fixed", weekday_full, "forever",
+                    datetime.now().date().isoformat(), external_id)
+                )
+                created += 1
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Schedule synced", "created": created, "updated": updated, "skipped_no_events": skipped}
