@@ -14,6 +14,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from pywebpush import webpush, WebPushException
+import json as jsonlib
+from dotenv import load_dotenv
+load_dotenv()
 
 # ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -246,6 +250,36 @@ def init_db():
     cur.execute("""
         ALTER TABLE commitments ADD COLUMN IF NOT EXISTS startDate TEXT
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            endpoint TEXT NOT NULL UNIQUE,
+            p256dh TEXT NOT NULL,
+            auth TEXT NOT NULL,
+            created_at TEXT DEFAULT (now()::text)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS notified_blocks (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            block_key TEXT NOT NULL,
+            notified_at TEXT DEFAULT (now()::text)
+        )
+    """)
+    cur.execute("""
+        ALTER TABLE settings ADD COLUMN IF NOT EXISTS placeholder_unused TEXT
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS generated_schedules (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            schedule_date TEXT NOT NULL,
+            blocks_json TEXT NOT NULL,
+            UNIQUE(user_id, schedule_date)
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -266,6 +300,83 @@ def keep_alive():
     t.start()
 
 keep_alive()
+
+def check_upcoming_blocks():
+    while True:
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+            now = datetime.now()
+            today_str = now.date().isoformat()
+
+            cur.execute(
+                "SELECT user_id, blocks_json FROM generated_schedules WHERE schedule_date = %s",
+                (today_str,)
+            )
+            rows = cur.fetchall()
+
+            for row in rows:
+                user_id = row['user_id']
+                blocks = jsonlib.loads(row['blocks_json'])
+
+                # Load this user's notification preferences
+                cur.execute(
+                    "SELECT key, value FROM settings WHERE user_id = %s AND key IN (%s, %s)",
+                    (user_id, 'notifyLeadMinutes', 'notifyBlockTypes')
+                )
+                prefs = {r['key']: r['value'] for r in cur.fetchall()}
+                lead_minutes = int(prefs.get('notifyLeadMinutes', 10))
+                enabled_types = prefs.get('notifyBlockTypes', 'study,peak,meal,commitment').split(',')
+
+                for block in blocks:
+                    if block.get('type') not in enabled_types:
+                        continue
+                    h, m = map(int, block['start'].split(':'))
+                    block_time = now.replace(hour=h, minute=m, second=0, microsecond=0)
+                    delta = (block_time - now).total_seconds() / 60
+                    if 0 <= delta <= lead_minutes:
+                        block_key = f"{today_str}-{block['start']}-{block['label']}"
+                        cur.execute(
+                            "SELECT id FROM notified_blocks WHERE user_id = %s AND block_key = %s",
+                            (user_id, block_key)
+                        )
+                        if cur.fetchone():
+                            continue
+                        cur.execute(
+                            "SELECT endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = %s",
+                            (user_id,)
+                        )
+                        subs = cur.fetchall()
+                        for sub in subs:
+                            try:
+                                webpush(
+                                    subscription_info={
+                                        "endpoint": sub['endpoint'],
+                                        "keys": {"p256dh": sub['p256dh'], "auth": sub['auth']}
+                                    },
+                                    data=jsonlib.dumps({
+                                        "title": "Coming up",
+                                        "body": f"{block['label']} starts at {block['start']}"
+                                    }),
+                                    vapid_private_key=os.environ.get("VAPID_PRIVATE_KEY"),
+                                    vapid_claims={"sub": "mailto:you@atlas.app"}
+                                )
+                            except WebPushException as e:
+                                if e.response is not None and e.response.status_code == 410:
+                                    cur.execute(
+                                        "DELETE FROM push_subscriptions WHERE endpoint = %s",
+                                        (sub['endpoint'],)
+                                    )
+                        cur.execute(
+                            "INSERT INTO notified_blocks (user_id, block_key) VALUES (%s, %s)",
+                            (user_id, block_key)
+                        )
+                        conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as err:
+            print(f"Push checker error: {err}")
+        threading.Event().wait(60)
 
 # ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
 
@@ -362,6 +473,10 @@ class ActualSleepTime(BaseModel):
 class Setting(BaseModel):
     key: str
     value: str
+
+class ScheduleSave(BaseModel):
+    date: str
+    blocks: list
 
 # ─── ROUTES ───────────────────────────────────────────────────────────────────
 
@@ -1142,3 +1257,56 @@ async def submit_feedback_form(body: dict, user_id: int = Depends(get_current_us
             }
         )
     return {"message": "Feedback submitted — thank you!"}
+
+# ── Notification ──
+
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: dict
+
+@app.get("/push/vapid-public-key")
+def get_vapid_public_key():
+    return {"publicKey": os.environ.get("VAPID_PUBLIC_KEY")}
+
+@app.post("/push/subscribe")
+def push_subscribe(sub: PushSubscription, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (endpoint) DO UPDATE SET p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth""",
+        (user_id, sub.endpoint, sub.keys.get("p256dh"), sub.keys.get("auth"))
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Subscribed"}
+
+@app.post("/push/unsubscribe")
+def push_unsubscribe(body: dict, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "DELETE FROM push_subscriptions WHERE endpoint = %s AND user_id = %s",
+        (body.get("endpoint"), user_id)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Unsubscribed"}
+
+@app.post("/schedule/save")
+def save_schedule(body: ScheduleSave, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO generated_schedules (user_id, schedule_date, blocks_json)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, schedule_date) DO UPDATE SET blocks_json = EXCLUDED.blocks_json""",
+        (user_id, body.date, jsonlib.dumps(body.blocks))
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Schedule saved"}

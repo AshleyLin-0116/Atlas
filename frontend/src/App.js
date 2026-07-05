@@ -297,6 +297,14 @@ function App() {
   const [deleteAccountError, setDeleteAccountError] = useState('');
   const [fontSize, setFontSize] = useState('medium');
   const [savedFontSize, setSavedFontSize] = useState('medium');
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  );
+  const [notifyLeadMinutes, setNotifyLeadMinutes] = useState(10);
+  const [savedNotifyLeadMinutes, setSavedNotifyLeadMinutes] = useState(10);
+  const [notifyTypes, setNotifyTypes] = useState(['study', 'peak', 'meal', 'commitment']);
+  const [savedNotifyTypes, setSavedNotifyTypes] = useState(['study', 'peak', 'meal', 'commitment']);
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -428,6 +436,15 @@ function App() {
         if (data.fontSize) {
           setSavedFontSize(data.fontSize);
           setFontSize(data.fontSize);
+        }
+        if (data.notifyLeadMinutes) {
+          setSavedNotifyLeadMinutes(Number(data.notifyLeadMinutes));
+          setNotifyLeadMinutes(Number(data.notifyLeadMinutes));
+        }
+        if (data.notifyBlockTypes) {
+          const types = data.notifyBlockTypes.split(',').filter(Boolean);
+          setSavedNotifyTypes(types);
+          setNotifyTypes(types);
         }
       });
 
@@ -765,6 +782,12 @@ function App() {
     else setDays([...days, day]);
   }
 
+  function toggleNotifyType(type) {
+    setNotifyTypes((prev) =>
+      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+    );
+  }
+
   function saveSetting(key, value) {
     authFetch(`${process.env.REACT_APP_API_URL}/settings`, {
       method: 'POST',
@@ -831,6 +854,13 @@ function App() {
       const dep = tasks.find((t) => t.id === depId);
       return !dep || !dep.completion_status;
     });
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1522,7 +1552,9 @@ function App() {
           gapEnd++;
         }
         let gapCursor = scanTime;
-        while (gapEnd - gapCursor >= savedTransitionGap * 2) {
+        let fillIterSafety = 0;
+        while (gapEnd - gapCursor >= savedTransitionGap * 2 && fillIterSafety < 500) {
+          fillIterSafety++;
           const pool = fillPool.filter((t) => remainingByTask[t.id] > 0);
           if (pool.length === 0) {
             break;
@@ -1538,6 +1570,9 @@ function App() {
           }
           const limit = fillTask.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
           const fillSize = Math.min(remainingByTask[fillTask.id], limit, remainingGap);
+          if (fillSize <= 0) {
+            break; // guard against 0-length blocks from a 0 max-block-length setting
+          }
           schedule.push({ start: toTimeString(fillStart), end: toTimeString(fillStart + fillSize), label: fillTask.taskName, type: isInPeak(fillStart) ? 'peak' : 'study', taskType: fillTask.taskType });
           remainingByTask[fillTask.id] -= fillSize;
 
@@ -1553,7 +1588,6 @@ function App() {
           previousFillTaskId = fillTask.id;
           gapCursor = cursor;
         }
-        scanTime = gapEnd + 1;
       }
     }
 
@@ -1652,6 +1686,12 @@ function App() {
       newWeekSchedule[day.toDateString()] = daySchedule;
       if (day.toDateString() === selectedDay.toDateString()) {
         activeDaySchedule = daySchedule;
+      }
+      if (isToday(day)) {
+        authFetch(`${process.env.REACT_APP_API_URL}/schedule/save`, {
+          method: 'POST',
+          body: JSON.stringify({ date: day.toISOString().split('T')[0], blocks: daySchedule })
+        }).catch((err) => console.error('Failed to save schedule for notifications:', err));
       }
     });
     setWeekSchedule(newWeekSchedule);
@@ -2360,6 +2400,54 @@ function App() {
         setFeedbackError(err.message); 
         setFeedbackMessage(''); 
       });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Enable/Disable Handlers
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async function handleEnableNotifications() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      alert('Push notifications are not supported in this browser.');
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    setNotificationPermission(permission);
+    if (permission !== 'granted') {
+      return;
+    }
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    const keyRes = await authFetch(`${process.env.REACT_APP_API_URL}/push/vapid-public-key`);
+    const { publicKey } = await keyRes.json();
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(publicKey)
+    });
+    await authFetch(`${process.env.REACT_APP_API_URL}/push/subscribe`, {
+      method: 'POST',
+      body: JSON.stringify(subscription.toJSON())
+    });
+    setNotificationsEnabled(true);
+  }
+
+  async function handleDisableNotifications() {
+    if (!('serviceWorker' in navigator)) {
+      return;
+    }
+    const registration = await navigator.serviceWorker.getRegistration();
+    if (!registration) {
+      setNotificationsEnabled(false);
+      return;
+    }
+    const subscription = await registration.pushManager.getSubscription();
+    if (subscription) {
+      await authFetch(`${process.env.REACT_APP_API_URL}/push/unsubscribe`, {
+        method: 'POST',
+        body: JSON.stringify({ endpoint: subscription.endpoint })
+      });
+      await subscription.unsubscribe();
+    }
+    setNotificationsEnabled(false);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -3714,6 +3802,66 @@ function App() {
               saveSetting('energyPattern', energyPattern); 
             }}>
               Save
+            </button>
+          </div>
+
+          <div className="section-label">Notifications</div>
+          <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Get a push notification before each scheduled block starts.
+            </p>
+            {notificationPermission === 'denied' ? (
+              <p style={{ fontSize: 12, color: '#c0392b' }}>
+                Notifications are blocked in your browser settings. Enable them for this site to use this feature.
+              </p>
+            ) : notificationsEnabled ? (
+              <button className="btn-secondary" type="button" onClick={handleDisableNotifications}>
+                Disable notifications
+              </button>
+            ) : (
+              <button className="btn-primary" type="button" onClick={handleEnableNotifications}>
+                Enable notifications
+              </button>
+            )}
+
+            <div className="divider" />
+
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Notify me before a block starts</label>
+            <select value={notifyLeadMinutes} onChange={(e) => setNotifyLeadMinutes(Number(e.target.value))}>
+              <option value={5}>5 minutes</option>
+              <option value={10}>10 minutes</option>
+              <option value={15}>15 minutes</option>
+              <option value={30}>30 minutes</option>
+            </select>
+
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Notify me for</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {[
+                { key: 'study', label: 'Tasks' },
+                { key: 'peak', label: 'Peak tasks' },
+                { key: 'meal', label: 'Meals' },
+                { key: 'commitment', label: 'Commitments' },
+              ].map(({ key, label }) => (
+                <button key={key} type="button"
+                  onClick={() => toggleNotifyType(key)}
+                  style={{
+                    padding: '4px 10px', borderRadius: 'var(--radius-pill)', fontSize: 12, fontWeight: 600,
+                    background: notifyTypes.includes(key) ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                    color: notifyTypes.includes(key) ? 'white' : 'var(--text-secondary)',
+                    border: '1.5px solid var(--border-color)',
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <button className="btn-primary" type="button" onClick={() => {
+              setSavedNotifyLeadMinutes(notifyLeadMinutes);
+              setSavedNotifyTypes(notifyTypes);
+              saveSetting('notifyLeadMinutes', notifyLeadMinutes);
+              saveSetting('notifyBlockTypes', notifyTypes.join(','));
+            }}>
+              Save notification settings
             </button>
           </div>
 
