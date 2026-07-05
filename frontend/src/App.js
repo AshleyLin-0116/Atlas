@@ -309,6 +309,8 @@ function App() {
   const [canvasToken, setCanvasToken] = useState('');
   const [canvasStatus, setCanvasStatus] = useState({ connected: false });
   const [canvasSyncMessage, setCanvasSyncMessage] = useState('');
+  const [googleStatus, setGoogleStatus] = useState({ connected: false });
+  const [googleSyncMessage, setGoogleSyncMessage] = useState('');
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -2460,6 +2462,7 @@ function App() {
     }
     fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/canvas/status`, { connected: false })
       .then(setCanvasStatus);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
   function handleConnectCanvas() {
@@ -2488,6 +2491,62 @@ function App() {
         fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/commitments`, []).then(setCommitments);
       })
       .catch(() => setCanvasSyncMessage('Sync failed — check your token and try again.'));
+  }
+
+  useEffect(() => {
+    if (!token) {
+      return;
+    }
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/google/status`, { connected: false })
+      .then(setGoogleStatus);
+
+    // Handle redirect back from Google OAuth
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google_connected') === 'true') {
+      setGoogleStatus({ connected: true });
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  function handleConnectGoogle() {
+    authFetch(`${process.env.REACT_APP_API_URL}/google/auth-url`)
+      .then((res) => res.json())
+      .then((data) => { window.location.href = data.url; })
+      .catch((err) => console.error('Failed to start Google auth:', err));
+  }
+
+  function handleDisconnectGoogle() {
+    authFetch(`${process.env.REACT_APP_API_URL}/google/disconnect`, { method: 'DELETE' })
+      .then(() => setGoogleStatus({ connected: false }))
+      .catch((err) => console.error('Failed to disconnect Google:', err));
+  }
+
+  function handleImportGoogle() {
+    setGoogleSyncMessage('Importing...');
+    authFetch(`${process.env.REACT_APP_API_URL}/google/sync/import`, { method: 'POST' })
+      .then((res) => res.json())
+      .then((data) => {
+        setGoogleSyncMessage(`Imported ${data.created} new events, updated ${data.updated}.`);
+        fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/commitments`, []).then(setCommitments);
+      })
+      .catch(() => setGoogleSyncMessage('Import failed — try reconnecting Google Calendar.'));
+  }
+
+  function handleExportGoogle() {
+    const todaySchedule = weekSchedule[selectedDay.toDateString()] || [];
+    if (todaySchedule.length === 0) {
+      setGoogleSyncMessage('Generate a schedule for this day first.');
+      return;
+    }
+    setGoogleSyncMessage('Exporting...');
+    authFetch(`${process.env.REACT_APP_API_URL}/google/sync/export`, {
+      method: 'POST',
+      body: JSON.stringify({ date: selectedDay.toISOString().split('T')[0], blocks: todaySchedule })
+    })
+      .then((res) => res.json())
+      .then((data) => setGoogleSyncMessage(`Pushed ${data.created} new, updated ${data.updated} events.`))
+      .catch(() => setGoogleSyncMessage('Export failed — try reconnecting Google Calendar.'));
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -3925,6 +3984,28 @@ function App() {
                 <input type="text" placeholder="Canvas domain (e.g. wisc.instructure.com)" value={canvasDomain} onChange={(e) => setCanvasDomain(e.target.value)} />
                 <input type="password" placeholder="Access token" value={canvasToken} onChange={(e) => setCanvasToken(e.target.value)} />
                 <button className="btn-primary" type="button" onClick={handleConnectCanvas}>Connect Canvas</button>
+              </>
+            )}
+          </div>
+
+          <div className="section-label">Google Calendar</div>
+          <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {googleStatus.connected ? (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--brand)' }}>Connected</p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn-primary" type="button" onClick={handleImportGoogle} style={{ flex: 1 }}>Import events</button>
+                  <button className="btn-primary" type="button" onClick={handleExportGoogle} style={{ flex: 1 }}>Export schedule</button>
+                </div>
+                {googleSyncMessage && <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{googleSyncMessage}</p>}
+                <button className="btn-secondary" type="button" onClick={handleDisconnectGoogle}>Disconnect Google Calendar</button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  Two-way sync with your Google Calendar — import your existing events, or push your generated Atlas schedule.
+                </p>
+                <button className="btn-primary" type="button" onClick={handleConnectGoogle}>Connect Google Calendar</button>
               </>
             )}
           </div>

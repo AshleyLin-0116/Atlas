@@ -294,6 +294,15 @@ def init_db():
     cur.execute("""
         ALTER TABLE commitments ADD COLUMN IF NOT EXISTS externalId TEXT
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS google_calendar_credentials (
+            user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            token_expiry TEXT NOT NULL,
+            connected_at TEXT DEFAULT (now()::text)
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -495,6 +504,9 @@ class ScheduleSave(BaseModel):
 class CanvasCredentials(BaseModel):
     canvas_domain: str
     access_token: str
+
+class GoogleAuthCode(BaseModel):
+    code: str
 
 # ─── API HELPERS ───────────────────────────────────────────────────────────────────
 
@@ -1524,3 +1536,258 @@ async def sync_canvas_schedule(user_id: int = Depends(get_current_user)):
     cur.close()
     conn.close()
     return {"message": "Schedule synced", "created": created, "updated": updated, "skipped_no_events": skipped}
+
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI")  # e.g. https://atlas-backend-476l.onrender.com/google/callback
+
+async def get_valid_google_token(user_id: int, cur, conn):
+    cur.execute(
+        "SELECT access_token, refresh_token, token_expiry FROM google_calendar_credentials WHERE user_id = %s",
+        (user_id,)
+    )
+    row = cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=400, detail="Google Calendar is not connected")
+
+    expiry = datetime.fromisoformat(row["token_expiry"])
+    if datetime.now(timezone.utc) < expiry - timedelta(minutes=2):
+        return row["access_token"]
+
+    # Expired (or about to be) — refresh it
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "refresh_token": row["refresh_token"],
+                "grant_type": "refresh_token"
+            },
+            timeout=15.0
+        )
+        if not response.is_success:
+            raise HTTPException(status_code=401, detail="Google token refresh failed — please reconnect Google Calendar")
+        data = response.json()
+
+    new_access_token = data["access_token"]
+    new_expiry = (datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])).isoformat()
+    cur.execute(
+        "UPDATE google_calendar_credentials SET access_token = %s, token_expiry = %s WHERE user_id = %s",
+        (new_access_token, new_expiry, user_id)
+    )
+    conn.commit()
+    return new_access_token
+
+@app.get("/google/auth-url")
+def get_google_auth_url(user_id: int = Depends(get_current_user)):
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "response_type": "code",
+        "scope": "https://www.googleapis.com/auth/calendar",
+        "access_type": "offline",   # required to get a refresh_token
+        "prompt": "consent",        # forces refresh_token on every connect, not just the first
+        "state": str(user_id)       # so the callback knows which Atlas user this is
+    }
+    query = "&".join(f"{k}={httpx.QueryParams({k: v})[k]}" for k, v in params.items())
+    url = f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
+    return {"url": url}
+
+@app.get("/google/callback")
+async def google_callback(code: str, state: str):
+    user_id = int(state)
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "code": code,
+                "grant_type": "authorization_code",
+                "redirect_uri": GOOGLE_REDIRECT_URI
+            },
+            timeout=15.0
+        )
+        if not response.is_success:
+            raise HTTPException(status_code=400, detail="Google authorization failed")
+        data = response.json()
+
+    if "refresh_token" not in data:
+        # Happens if the user already granted access before and Google skips issuing a new one.
+        # The prompt=consent param above should prevent this, but guard anyway.
+        raise HTTPException(status_code=400, detail="No refresh token received — try disconnecting in your Google account permissions and reconnecting")
+
+    expiry = (datetime.now(timezone.utc) + timedelta(seconds=data["expires_in"])).isoformat()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        """INSERT INTO google_calendar_credentials (user_id, access_token, refresh_token, token_expiry)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE SET access_token = EXCLUDED.access_token,
+        refresh_token = EXCLUDED.refresh_token, token_expiry = EXCLUDED.token_expiry""",
+        (user_id, data["access_token"], data["refresh_token"], expiry)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    # Redirect back into the app rather than leaving the user on a bare JSON page
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="https://atlas-delta-sable.vercel.app?google_connected=true")
+
+@app.delete("/google/disconnect")
+def disconnect_google(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM google_calendar_credentials WHERE user_id = %s", (user_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Google Calendar disconnected"}
+
+@app.get("/google/status")
+def google_status(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT connected_at FROM google_calendar_credentials WHERE user_id = %s", (user_id,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {"connected": bool(row), "connected_at": row["connected_at"] if row else None}
+
+@app.post("/google/sync/import")
+async def sync_google_import(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    access_token = await get_valid_google_token(user_id, cur, conn)
+
+    time_min = datetime.now(timezone.utc).isoformat()
+    time_max = (datetime.now(timezone.utc) + timedelta(days=60)).isoformat()
+
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+            headers={"Authorization": f"Bearer {access_token}"},
+            params={
+                "timeMin": time_min,
+                "timeMax": time_max,
+                "singleEvents": "true",
+                "orderBy": "startTime",
+                "maxResults": 250
+            },
+            timeout=20.0
+        )
+        if not response.is_success:
+            raise HTTPException(status_code=502, detail=f"Google Calendar API error: {response.status_code}")
+        events = response.json().get("items", [])
+
+    created, updated, skipped = 0, 0, 0
+
+    for event in events:
+        # Skip events Atlas itself created — those get pushed FROM Atlas, not pulled back in
+        if event.get("extendedProperties", {}).get("private", {}).get("source") == "atlas":
+            continue
+
+        start = event.get("start", {})
+        end = event.get("end", {})
+        # All-day events use "date" instead of "dateTime" — skip those, they don't fit a time-block schedule
+        if "dateTime" not in start or "dateTime" not in end:
+            skipped += 1
+            continue
+
+        start_dt = datetime.fromisoformat(start["dateTime"])
+        end_dt = datetime.fromisoformat(end["dateTime"])
+        event_date = start_dt.date().isoformat()
+        start_time = start_dt.strftime("%H:%M")
+        end_time = end_dt.strftime("%H:%M")
+        event_id = event["id"]
+        external_id = f"google-{event_id}"
+        name = event.get("summary", "Untitled event")
+
+        cur.execute(
+            "SELECT id FROM commitments WHERE externalId = %s AND user_id = %s",
+            (external_id, user_id)
+        )
+        existing = cur.fetchone()
+
+        if existing:
+            cur.execute(
+                """UPDATE commitments SET commitmentName = %s, commitmentStart = %s,
+                commitmentEnd = %s, specificDate = %s WHERE id = %s AND user_id = %s""",
+                (name, start_time, end_time, event_date, existing["id"], user_id)
+            )
+            updated += 1
+        else:
+            cur.execute(
+                """INSERT INTO commitments
+                (user_id, commitmentName, commitmentStart, commitmentEnd, commitmentType,
+                timeMode, specificDate, repeatUntilType, externalId)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (user_id, name, start_time, end_time, "Other",
+                "fixed", event_date, "forever", external_id)
+            )
+            created += 1
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Google Calendar imported", "created": created, "updated": updated, "skipped_all_day": skipped}
+
+@app.post("/google/sync/export")
+async def sync_google_export(body: ScheduleSave, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    access_token = await get_valid_google_token(user_id, cur, conn)
+
+    created, updated, skipped = 0, 0, 0
+
+    async with httpx.AsyncClient() as client:
+        for block in body.blocks:
+            # Only push meaningful named blocks — skip filler like buffers/transitions/sleep
+            if block.get("type") in ("buffer", "sleep", "break"):
+                skipped += 1
+                continue
+
+            block_key = f"{body.date}-{block['start']}-{block['label']}"
+            event_body = {
+                "summary": block["label"],
+                "start": {"dateTime": f"{body.date}T{block['start']}:00", "timeZone": "America/Chicago"},
+                "end": {"dateTime": f"{body.date}T{block['end']}:00", "timeZone": "America/Chicago"},
+                "extendedProperties": {"private": {"source": "atlas", "block_key": block_key}}
+            }
+
+            # Check if we've already pushed this exact block before (search by our own tag)
+            search = await client.get(
+                "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+                headers={"Authorization": f"Bearer {access_token}"},
+                params={
+                    "privateExtendedProperty": f"block_key={block_key}",
+                    "timeMin": f"{body.date}T00:00:00Z",
+                    "timeMax": f"{body.date}T23:59:59Z"
+                },
+                timeout=15.0
+            )
+            existing_events = search.json().get("items", []) if search.is_success else []
+
+            if existing_events:
+                event_id = existing_events[0]["id"]
+                await client.put(
+                    f"https://www.googleapis.com/calendar/v3/calendars/primary/events/{event_id}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=event_body,
+                    timeout=15.0
+                )
+                updated += 1
+            else:
+                await client.post(
+                    "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                    json=event_body,
+                    timeout=15.0
+                )
+                created += 1
+
+    cur.close()
+    conn.close()
+    return {"message": "Pushed to Google Calendar", "created": created, "updated": updated, "skipped": skipped}
