@@ -21,9 +21,13 @@ load_dotenv()
 
 # ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
-SECRET_KEY = "atlas-secret-key-change-in-production"
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY environment variable is not set")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://atlas-delta-sable.vercel.app")
+BACKEND_URL = os.environ.get("BACKEND_URL", "https://atlas-backend-476l.onrender.com")
 
 # ─── APP SETUP ────────────────────────────────────────────────────────────────
 
@@ -31,7 +35,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://atlas-delta-sable.vercel.app"],
+    allow_origins=["http://localhost:3000", FRONTEND_URL],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -315,7 +319,7 @@ def keep_alive():
     def ping():
         while True:
             try:
-                urllib.request.urlopen('https://atlas-backend-476l.onrender.com/')
+                urllib.request.urlopen(f'{BACKEND_URL}/')
             except Exception:
                 pass
             threading.Event().wait(600)
@@ -602,7 +606,7 @@ async def forgot_password(body: dict):
     conn.commit()
     cur.close()
     conn.close()
-    reset_link = f"https://atlas-delta-sable.vercel.app?reset_token={token}"
+    reset_link = f"{FRONTEND_URL}?reset_token={token}"
     async with httpx.AsyncClient() as client:
         await client.post(
             "https://api.sendgrid.com/v3/mail/send",
@@ -1634,7 +1638,7 @@ async def google_callback(code: str, state: str):
 
     # Redirect back into the app rather than leaving the user on a bare JSON page
     from fastapi.responses import RedirectResponse
-    return RedirectResponse(url="https://atlas-delta-sable.vercel.app?google_connected=true")
+    return RedirectResponse(url=f"{FRONTEND_URL}?google_connected=true")
 
 @app.delete("/google/disconnect")
 def disconnect_google(user_id: int = Depends(get_current_user)):

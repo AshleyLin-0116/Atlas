@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import logo from './Atlas_Logo.png';
+import logo from './Atlas_Logo192.png';
 import './App.css';
 import { useTheme, getCategoryFromName, getEmojiForCategory } from './ThemeContext';
 
@@ -1251,7 +1251,10 @@ function App() {
     if (['evening_early', 'evening_mid', 'evening_late', 'both', 'after_gym'].includes(savedShowerPreference)) {
       let eveningWindowStart;
       if (savedShowerPreference === 'after_gym') {
-        const gymBlock = blockedRanges.find((b) => b.label && b.label.toLowerCase().includes('gym'));
+        const gymCommitmentNames = commitments
+          .filter((c) => c.commitmentType === 'Gym / Exercise')
+          .map((c) => c.commitmentName);
+        const gymBlock = blockedRanges.find((b) => gymCommitmentNames.includes(b.label));
         eveningWindowStart = gymBlock ? gymBlock.end : 18 * 60;
       } else if (savedShowerPreference === 'evening_early') {
         eveningWindowStart = 17 * 60;
@@ -1260,7 +1263,18 @@ function App() {
       } else {
         eveningWindowStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
       }
-      blockedRanges.push({ start: eveningWindowStart, end: eveningWindowStart + savedShowerDuration, label: 'Shower', type: 'shower' });
+
+      // Push forward past any already-placed block (meal/commitment/commute) it would collide with
+      const wouldCollide = (start, end) => blockedRanges.some((b) => start < b.end && end > b.start);
+      let showerStart = eveningWindowStart;
+      let safety = 0;
+      while (wouldCollide(showerStart, showerStart + savedShowerDuration) && safety < 200) {
+        const collidingBlock = blockedRanges.find((b) => showerStart < b.end && showerStart + savedShowerDuration > b.start);
+        showerStart = collidingBlock.end;
+        safety++;
+      }
+
+      blockedRanges.push({ start: showerStart, end: showerStart + savedShowerDuration, label: 'Shower', type: 'shower' });
     }
     blockedRanges.sort((a, b) => a.start - b.start);
 
@@ -1508,7 +1522,7 @@ function App() {
       }
       const blockSize = blockEnd - currentTime;
 
-      if (blockSize < 15) {
+      if (blockSize < 1) {
         // No usable room here — try the next free slot rather than looping forever
         const nextFree = getNextFreeStart(blockEnd + 1);
         if (nextFree <= currentTime) {
@@ -1559,7 +1573,7 @@ function App() {
         }
         let gapCursor = scanTime;
         let fillIterSafety = 0;
-        while (gapEnd - gapCursor >= savedTransitionGap * 2 && fillIterSafety < 500) {
+        while (gapEnd - gapCursor > 0 && fillIterSafety < 500) {
           fillIterSafety++;
           const pool = fillPool.filter((t) => remainingByTask[t.id] > 0);
           if (pool.length === 0) {
@@ -1569,9 +1583,13 @@ function App() {
           if (!fillTask) {
             break;
           }
-          const fillStart = gapCursor + savedTransitionGap;
+          // Only pad with a transition gap if there's room left over after doing so;
+          // otherwise use every remaining minute for the task itself.
+          const fillStart = (gapEnd - gapCursor > savedTransitionGap)
+            ? gapCursor + savedTransitionGap
+            : gapCursor;
           const remainingGap = gapEnd - fillStart;
-          if (remainingGap < 15) {
+          if (remainingGap <= 0) {
             break;
           }
           const limit = fillTask.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
