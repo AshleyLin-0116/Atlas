@@ -1265,12 +1265,13 @@ function App() {
       }
 
       // Push forward past any already-placed block (meal/commitment/commute) it would collide with
-      const wouldCollide = (start, end) => blockedRanges.some((b) => start < b.end && end > b.start);
+      const findCollision = (start, end) => blockedRanges.find((b) => start < b.end && end > b.start);
       let showerStart = eveningWindowStart;
       let safety = 0;
-      while (wouldCollide(showerStart, showerStart + savedShowerDuration) && safety < 200) {
-        const collidingBlock = blockedRanges.find((b) => showerStart < b.end && showerStart + savedShowerDuration > b.start);
-        showerStart = collidingBlock.end;
+      let collision = findCollision(showerStart, showerStart + savedShowerDuration);
+      while (collision && safety < 200) {
+        showerStart = collision.end;
+        collision = findCollision(showerStart, showerStart + savedShowerDuration);
         safety++;
       }
 
