@@ -1248,47 +1248,6 @@ function App() {
     if (savedShowerPreference === 'morning' || savedShowerPreference === 'both') {
       blockedRanges.push({ start: wake, end: wake + savedShowerDuration, label: 'Shower', type: 'shower' });
     }
-    if (['evening_early', 'evening_mid', 'evening_late', 'both', 'after_gym'].includes(savedShowerPreference)) {
-      let eveningWindowStart;
-      if (savedShowerPreference === 'after_gym') {
-        const gymCommitmentNames = commitments
-          .filter((c) => (c.commitmentType || '').trim().toLowerCase() === 'gym / exercise')
-          .map((c) => c.commitmentName);
-        const gymRelatedBlocks = blockedRanges.filter((b) =>
-          gymCommitmentNames.includes(b.label) || gymCommitmentNames.some((n) => b.label === `Commute back from ${n}`)
-        );
-        eveningWindowStart = gymRelatedBlocks.length > 0
-          ? Math.max(...gymRelatedBlocks.map((b) => b.end))
-          : 18 * 60;
-      } else if (savedShowerPreference === 'evening_early') {
-        eveningWindowStart = 17 * 60;
-      } else if (savedShowerPreference === 'evening_mid') {
-        eveningWindowStart = 19 * 60;
-      } else {
-        eveningWindowStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
-      }
-
-      const findCollision = (start, end) => blockedRanges.find((b) => start < b.end && end > b.start);
-      const fitsShower = (start) => start >= wake && start + savedShowerDuration <= sleep && !findCollision(start, start + savedShowerDuration);
-
-      let placed = false;
-      for (let t = eveningWindowStart; t + savedShowerDuration <= sleep; t++) {
-        if (fitsShower(t)) {
-          blockedRanges.push({ start: t, end: t + savedShowerDuration, label: 'Shower', type: 'shower' });
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) {
-        for (let t = eveningWindowStart - 1; t >= wake; t--) {
-          if (fitsShower(t)) {
-            blockedRanges.push({ start: t, end: t + savedShowerDuration, label: 'Shower', type: 'shower' });
-            placed = true;
-            break;
-          }
-        }
-      }
-    }
     blockedRanges.sort((a, b) => a.start - b.start);
 
     const schedule = [];
@@ -1468,6 +1427,48 @@ function App() {
           }
         }
         placeFlexBlock(commitment.commitmentName, commitment.flexDuration, commitment.flexPreference || 'any', 'commitment', commitment.commuteTimeTo ?? commitment.commuteTime ?? 0, commitment.commuteTimeFrom ?? commitment.commuteTime ?? 0);      
+      }
+    }
+
+    // Evening/after-gym shower — placed now that flexible commitments (e.g. gym) are in `schedule`
+    if (['evening_early', 'evening_mid', 'evening_late', 'both', 'after_gym'].includes(savedShowerPreference)) {
+      let eveningWindowStart;
+      if (savedShowerPreference === 'after_gym') {
+        const gymCommitmentNames = commitments
+          .filter((c) => (c.commitmentType || '').trim().toLowerCase() === 'gym / exercise')
+          .map((c) => c.commitmentName);
+        const gymRelatedBlocks = schedule.filter((b) =>
+          gymCommitmentNames.includes(b.label) || gymCommitmentNames.some((n) => b.label === `Commute back from ${n}` || b.label.startsWith(`Commute from ${n} to`) || b.label.endsWith(`to ${n}`))
+        );
+        eveningWindowStart = gymRelatedBlocks.length > 0
+          ? Math.max(...gymRelatedBlocks.map((b) => blockToMin(b.end)))
+          : 18 * 60;
+      } else if (savedShowerPreference === 'evening_early') {
+        eveningWindowStart = 17 * 60;
+      } else if (savedShowerPreference === 'evening_mid') {
+        eveningWindowStart = 19 * 60;
+      } else {
+        eveningWindowStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
+      }
+
+      const fitsShower = (start) => start >= wake && start + savedShowerDuration <= sleep && !isOccupied(start, start + savedShowerDuration);
+
+      let placed = false;
+      for (let t = eveningWindowStart; t + savedShowerDuration <= sleep; t++) {
+        if (fitsShower(t)) {
+          schedule.push({ start: toTimeString(t), end: toTimeString(t + savedShowerDuration), label: 'Shower', type: 'shower' });
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        for (let t = eveningWindowStart - 1; t >= wake; t--) {
+          if (fitsShower(t)) {
+            schedule.push({ start: toTimeString(t), end: toTimeString(t + savedShowerDuration), label: 'Shower', type: 'shower' });
+            placed = true;
+            break;
+          }
+        }
       }
     }
 
