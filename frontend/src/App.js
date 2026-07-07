@@ -701,7 +701,8 @@ function App() {
       if (i < sorted.length - 1) {
         const thisEnd = sorted[i].end;
         const nextStart = sorted[i + 1].start;
-        if (nextStart > thisEnd) {
+        const adjacentIsTransition = sorted[i].label === 'Transition' || sorted[i + 1].label === 'Transition';
+        if (nextStart > thisEnd && !adjacentIsTransition) {
           const toMin = (t) => {
             const [h, m] = t.split(':').map(Number);
             return h * 60 + m;
@@ -1614,6 +1615,9 @@ function App() {
           const fillStart = (gapEnd - gapCursor > savedTransitionGap)
             ? gapCursor + savedTransitionGap
             : gapCursor;
+          if (fillStart > gapCursor) {
+            schedule.push({ start: toTimeString(gapCursor), end: toTimeString(fillStart), label: 'Transition', type: 'buffer' });
+          }
           const remainingGap = gapEnd - fillStart;
           if (remainingGap <= 0) {
             break;
