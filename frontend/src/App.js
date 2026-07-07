@@ -1252,7 +1252,7 @@ function App() {
       let eveningWindowStart;
       if (savedShowerPreference === 'after_gym') {
         const gymCommitmentNames = commitments
-          .filter((c) => c.commitmentType === 'Gym / Exercise')
+          .filter((c) => (c.commitmentType || '').trim().toLowerCase() === 'gym / exercise')
           .map((c) => c.commitmentName);
         const gymRelatedBlocks = blockedRanges.filter((b) =>
           gymCommitmentNames.includes(b.label) || gymCommitmentNames.some((n) => b.label === `Commute back from ${n}`)
