@@ -1302,9 +1302,13 @@ function App() {
       const target = from + savedTransitionGap;
       const next = getNextFreeStart(target);
       if (next > from && savedTransitionGap > 0) {
-        const transitionEnd = Math.min(next, from + savedTransitionGap);
-        if (transitionEnd > from && !isOccupied(from, transitionEnd)) {
-          schedule.push({ start: toTimeString(from), end: toTimeString(transitionEnd), label: 'Transition', type: 'buffer' });
+        const fromStr = toTimeString(from);
+        const alreadyHasTransition = schedule.some((b) => b.label === 'Transition' && b.end === fromStr);
+        if (!alreadyHasTransition) {
+          const transitionEnd = Math.min(next, from + savedTransitionGap);
+          if (transitionEnd > from && !isOccupied(from, transitionEnd)) {
+            schedule.push({ start: toTimeString(from), end: toTimeString(transitionEnd), label: 'Transition', type: 'buffer' });
+          }
         }
       }
       return next;
