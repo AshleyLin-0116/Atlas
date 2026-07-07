@@ -1254,8 +1254,12 @@ function App() {
         const gymCommitmentNames = commitments
           .filter((c) => c.commitmentType === 'Gym / Exercise')
           .map((c) => c.commitmentName);
-        const gymBlock = blockedRanges.find((b) => gymCommitmentNames.includes(b.label));
-        eveningWindowStart = gymBlock ? gymBlock.end : 18 * 60;
+        const gymRelatedBlocks = blockedRanges.filter((b) =>
+          gymCommitmentNames.includes(b.label) || gymCommitmentNames.some((n) => b.label === `Commute back from ${n}`)
+        );
+        eveningWindowStart = gymRelatedBlocks.length > 0
+          ? Math.max(...gymRelatedBlocks.map((b) => b.end))
+          : 18 * 60;
       } else if (savedShowerPreference === 'evening_early') {
         eveningWindowStart = 17 * 60;
       } else if (savedShowerPreference === 'evening_mid') {
@@ -1264,18 +1268,26 @@ function App() {
         eveningWindowStart = toMinutes(effectiveSleep) - savedNightBuffer - savedShowerDuration;
       }
 
-      // Push forward past any already-placed block (meal/commitment/commute) it would collide with
       const findCollision = (start, end) => blockedRanges.find((b) => start < b.end && end > b.start);
-      let showerStart = eveningWindowStart;
-      let safety = 0;
-      let collision = findCollision(showerStart, showerStart + savedShowerDuration);
-      while (collision && safety < 200) {
-        showerStart = collision.end;
-        collision = findCollision(showerStart, showerStart + savedShowerDuration);
-        safety++;
-      }
+      const fitsShower = (start) => start >= wake && start + savedShowerDuration <= sleep && !findCollision(start, start + savedShowerDuration);
 
-      blockedRanges.push({ start: showerStart, end: showerStart + savedShowerDuration, label: 'Shower', type: 'shower' });
+      let placed = false;
+      for (let t = eveningWindowStart; t + savedShowerDuration <= sleep; t++) {
+        if (fitsShower(t)) {
+          blockedRanges.push({ start: t, end: t + savedShowerDuration, label: 'Shower', type: 'shower' });
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        for (let t = eveningWindowStart - 1; t >= wake; t--) {
+          if (fitsShower(t)) {
+            blockedRanges.push({ start: t, end: t + savedShowerDuration, label: 'Shower', type: 'shower' });
+            placed = true;
+            break;
+          }
+        }
+      }
     }
     blockedRanges.sort((a, b) => a.start - b.start);
 
@@ -1324,6 +1336,18 @@ function App() {
         time++;
       }
       return sleep;
+    };
+
+    const advanceWithTransition = (from) => {
+      const target = from + savedTransitionGap;
+      const next = getNextFreeStart(target);
+      if (next > from && savedTransitionGap > 0) {
+        const transitionEnd = Math.min(next, from + savedTransitionGap);
+        if (transitionEnd > from && !isOccupied(from, transitionEnd)) {
+          schedule.push({ start: toTimeString(from), end: toTimeString(transitionEnd), label: 'Transition', type: 'buffer' });
+        }
+      }
+      return next;
     };
 
     const getPreferenceWindow = (preference) => {
@@ -1508,7 +1532,7 @@ function App() {
       const limit = task.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
       const sessionLength = Math.min(remainingByTask[task.id], limit);
 
-      currentTime = getNextFreeStart(currentTime + savedTransitionGap);
+      currentTime = advanceWithTransition(currentTime);
       if (currentTime >= sleep) {
         break;
       }
@@ -1562,7 +1586,7 @@ function App() {
       let scanTime = wake;
       let fillSafety = 0;
       let previousFillTaskId = null;
-      while (scanTime < sleep && fillSafety < 1000) {
+      while (scanTime < sleep && fillSafety < 2000) {
         fillSafety++;
         if (isOccupiedAt(scanTime, scanTime + 1)) {
           scanTime++;
@@ -1613,6 +1637,7 @@ function App() {
           previousFillTaskId = fillTask.id;
           gapCursor = cursor;
         }
+        scanTime = gapEnd;
       }
     }
 
