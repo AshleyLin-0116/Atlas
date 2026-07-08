@@ -1620,7 +1620,11 @@ function App() {
             ? gapCursor + savedTransitionGap
             : gapCursor;
           if (fillStart > gapCursor) {
-            schedule.push({ start: toTimeString(gapCursor), end: toTimeString(fillStart), label: 'Transition', type: 'buffer' });
+            const gapCursorStr = toTimeString(gapCursor);
+            const alreadyHasTransition = schedule.some((b) => b.label === 'Transition' && b.end === gapCursorStr);
+            if (!alreadyHasTransition) {
+              schedule.push({ start: toTimeString(gapCursor), end: toTimeString(fillStart), label: 'Transition', type: 'buffer' });
+            }
           }
           const remainingGap = gapEnd - fillStart;
           if (remainingGap <= 0) {
@@ -1628,8 +1632,9 @@ function App() {
           }
           const limit = fillTask.taskType === 'deep' ? savedMaxBlockLength : Math.min(savedMaxBlockLength * 2, 90);
           const fillSize = Math.min(remainingByTask[fillTask.id], limit, remainingGap);
-          if (fillSize <= 0) {
-            break; // guard against 0-length blocks from a 0 max-block-length setting
+          const MIN_FILL_BLOCK = 10;
+          if (fillSize < MIN_FILL_BLOCK) {
+            break; // guard against tiny fragmented blocks in leftover slivers of a gap
           }
           schedule.push({ start: toTimeString(fillStart), end: toTimeString(fillStart + fillSize), label: fillTask.taskName, type: isInPeak(fillStart) ? 'peak' : 'study', taskType: fillTask.taskType });
           remainingByTask[fillTask.id] -= fillSize;
