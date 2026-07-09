@@ -1620,8 +1620,7 @@ function App() {
             ? gapCursor + savedTransitionGap
             : gapCursor;
           if (fillStart > gapCursor) {
-            const gapCursorStr = toTimeString(gapCursor);
-            const alreadyHasTransition = schedule.some((b) => b.label === 'Transition' && b.end === gapCursorStr);
+            const alreadyHasTransition = schedule.some((b) => b.label === 'Transition' && blockToMin(b.end) === gapCursor);
             if (!alreadyHasTransition) {
               schedule.push({ start: toTimeString(gapCursor), end: toTimeString(fillStart), label: 'Transition', type: 'buffer' });
             } else {
