@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { useTheme } from './ThemeContext';
 
 const CATEGORY_OPTIONS = [
     'Homework', 
