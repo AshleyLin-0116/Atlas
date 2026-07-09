@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import logo from './Atlas_Logo192.png';
 import './App.css';
 import { useTheme, getCategoryFromName, getEmojiForCategory } from './ThemeContext';
+import Onboarding from './Onboarding';
 
 /* eslint-disable no-unused-vars */
 
@@ -137,6 +138,7 @@ function App() {
   const [resetMessage, setResetMessage] = useState('');
   const [resetError, setResetError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [onboardingDone, setOnboardingDone] = useState(false);
 
   // ── Core data ──
   const [tasks, setTasks] = useState([]);
@@ -2811,6 +2813,36 @@ function App() {
   }
 
   // ── Main app ──
+  
+  // Show onboarding for new users: no sleep schedule saved and not yet dismissed
+  if (!sleepScheduleSaved && !onboardingDone) {
+    return (
+      <div className="app" style={{ justifyContent: 'flex-start', overflowY: 'auto' }}>
+        <div className="topbar">
+          <div className="topbar-left">
+            <img src={logo} alt="Atlas logo" className="topbar-logo" />
+            <span className="topbar-name">Atlas</span>
+          </div>
+        </div>
+        <Onboarding
+          onComplete={() => {
+            setOnboardingDone(true);
+            setSleepScheduleSaved(true);
+            // Reload data so the main app picks up what was saved
+            fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/tasks`, []).then(setTasks);
+            fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/meals`, []).then(setMeals);
+            fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/sleep`, null).then((data) => {
+              if (data) { setWakeTime(data.wakeTime); setSleepTime(data.sleepTime); }
+            });
+          }}
+          authFetch={authFetch}
+          apiUrl={process.env.REACT_APP_API_URL}
+          clockFormat={savedClockFormat}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="app">
 
