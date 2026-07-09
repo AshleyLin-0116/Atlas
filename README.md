@@ -1,6 +1,6 @@
-# Atlas (Adaptive Study Scheduler)
+# Atlas
 
-Atlas is a personalized daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability — then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
+Atlas is a full-stack AI-powered daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
 
 The core idea: most scheduling tools treat your time as static. Atlas treats it as dynamic, adjusting to what actually happens and getting more accurate with each completed task.
 
@@ -16,25 +16,30 @@ Students consistently underestimate how long tasks take, schedule work during lo
 
 ## What It Does
 
-- **Generates daily schedules** -> fills your available time with tasks, breaks, meals, and commitments automatically
-- **Prioritizes tasks dynamically** -> ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
-- **Classifies deep vs. light work** -> alternates cognitively demanding and lighter tasks to preserve focus
-- **Schedules around peak hours** -> places hardest tasks during your self-reported most productive window
-- **Handles flexible and fixed commitments** -> meals and commitments can have fixed times or be placed automatically in preferred windows
-- **Models commute time** -> blocks travel to and from any commitment requiring transportation, including return trips
-- **Adjusts duration estimates** -> computes per-category multipliers from history and silently corrects future task durations
-- **Tracks cumulative partial progress** -> logs duration across multiple partial sessions and sums them on final completion
-- **Parses tasks from natural language** -> describe a task in plain English and Atlas fills the form automatically using Claude AI
-- **Enforces task dependencies** -> blocked tasks are excluded from the schedule until their prerequisites are complete
-- **Collects behavioral feedback** -> after each task, logs actual duration, actual difficulty, and completion status
-- **Tracks estimation accuracy** -> compares estimated vs. actual duration per task and by category
-- **Identifies productive time patterns** -> analyzes which time periods have the highest task completion rates
-- **Surfaces smart suggestions** -> detects overdue tasks, consistent underestimation patterns, and peak productivity windows
-- **Weekly analytics** -> summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
-- **Schedule flagging** -> flag any block with a note describing what you'd like changed; notes surface in Schedule Notes on next generation
-- **Schedule notes** -> after generation, flags duration adjustments, blocked tasks, overflow tasks, and user-flagged blocks
-- **Full account management** -> update username, email, or password; forgot password/username via email; delete account
-- **Persists everything** -> all tasks, history, settings, and schedules saved to PostgreSQL
+- **Generates daily schedules** → fills your available time with tasks, breaks, meals, and commitments automatically
+- **Prioritizes tasks dynamically** → ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
+- **Classifies deep vs. light work** → alternates cognitively demanding and lighter tasks to preserve focus
+- **Schedules around peak hours** → places hardest tasks during your self-reported most productive window
+- **Handles flexible and fixed commitments** → meals and commitments can have fixed times or be placed automatically in preferred windows
+- **Models commute time** → blocks travel to and from any commitment requiring transportation, including return trips
+- **Adjusts duration estimates** → computes per-category multipliers from history and silently corrects future task durations
+- **Tracks cumulative partial progress** → logs duration across multiple partial sessions and sums them on final completion
+- **Parses tasks from natural language** → describe a task in plain English and Atlas fills the form automatically using Claude AI
+- **Enforces task dependencies** → blocked tasks are excluded from the schedule until their prerequisites are complete
+- **Supports recurring tasks** → weekly recurring tasks generate child instances automatically for each scheduled day
+- **Commitment repeat-until options** → commitments can repeat forever, until a date, or a fixed number of times
+- **Canvas LMS integration** → sync assignments and class schedule directly from your institution's Canvas instance
+- **Google Calendar two-way sync** → import existing events or push your generated Atlas schedule to Google Calendar
+- **Push notifications** → get notified before each scheduled block starts, with configurable lead time and block type filters
+- **Guided onboarding** → new users complete a three-step setup flow (sleep → meal → task) before reaching the main app
+- **Collects behavioral feedback** → after each task, logs actual duration, actual difficulty, and completion status
+- **Tracks estimation accuracy** → compares estimated vs. actual duration per task and by category
+- **Identifies productive time patterns** → analyzes which time periods have the highest task completion rates
+- **Surfaces smart suggestions** → detects overdue tasks, consistent underestimation patterns, and peak productivity windows
+- **Weekly analytics** → summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
+- **Schedule flagging** → flag any block with a note describing what you'd like changed
+- **Full account management** → update username, email, or password; forgot password/username via email; delete account
+- **Persists everything** → all tasks, history, settings, and schedules saved to PostgreSQL
 
 ---
 
@@ -64,7 +69,8 @@ Schedule Generator
   4. Interleave deep/light tasks by priority
   5. Prefer peak-hour windows for deep tasks; fall back to next available slot
   6. Insert breaks proportional to block length
-  7. Skip blocked tasks (unmet dependencies)
+  7. Fill remaining gaps with weighted task selection
+  8. Skip blocked tasks (unmet dependencies)
           │
           ▼
 Generated daily schedule + schedule notes
@@ -78,7 +84,6 @@ Feedback Collection (after each task)
 History & Analytics
   Per-category multipliers, weekly stats, productive time analysis,
   completion rates by time of day, smart suggestions
-```
 
 ---
 
@@ -92,6 +97,9 @@ History & Analytics
 | Auth | JWT via `python-jose` + `bcrypt` |
 | Email | SendGrid (password reset, username recovery) |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
+| Push notifications | Web Push API + `pywebpush` + VAPID |
+| Calendar sync | Google Calendar API (OAuth2) |
+| LMS sync | Canvas REST API |
 | API communication | REST (JSON) |
 | Frontend deployment | Vercel |
 | Backend deployment | Render |
@@ -102,7 +110,6 @@ No ORM — raw SQL for transparency and simplicity.
 
 ## Architecture
 
-```
 User (Browser)
       │
       ▼
@@ -111,14 +118,20 @@ Frontend — React (Vercel)
   - Priority Scoring Engine
   - Duration Adjustment Engine
   - Analytics Dashboard
+  - Onboarding Flow
       │
       │ REST API (JSON) + JWT Auth
       ▼
 Backend — FastAPI (Render)
-  - /auth/* (register, login, reset, update, delete)
+  - /auth/*         (register, login, reset, update, delete)
   - /tasks, /history, /sleep
   - /meals, /commitments, /settings
-  - /parse-task (AI), /feedback
+  - /parse-task     (AI — natural language task parsing)
+  - /feedback
+  - /push/*         (VAPID push notification subscriptions + daemon)
+  - /schedule/save  (persist generated schedule for push notification targeting)
+  - /canvas/*       (connect, sync assignments, sync schedule)
+  - /google/*       (OAuth2, import events, export schedule)
       │
       ├── psycopg2
       │       ▼
@@ -127,6 +140,10 @@ Backend — FastAPI (Render)
       │     - task_dependencies, partial_sessions
       │     - meals, commitments, sleep_schedule
       │     - settings, password_reset_tokens, feedback
+      │     - generated_schedules, notified_blocks
+      │     - push_subscriptions
+      │     - canvas_credentials
+      │     - google_calendar_credentials
       │
       └── httpx
               ▼
@@ -134,7 +151,10 @@ Backend — FastAPI (Render)
             - Natural language task parsing
           SendGrid API
             - Password reset and username recovery emails
-```
+          Google Calendar API
+            - Two-way event sync (OAuth2 + token refresh)
+          Canvas REST API
+            - Assignment and class schedule import
 
 ### Component Responsibilities
 
@@ -144,7 +164,11 @@ Backend — FastAPI (Render)
 - **Priority Scoring Engine**: Ranks tasks by a weighted formula: `0.35×urgency + 0.25×importance + 0.20×preference + 0.15×difficulty + 0.05×consistency`. Consistency is derived from per-category completion history.
 - **Duration Adjustment Engine**: Computes per-task and per-category multipliers from history (`total actual / total estimated`) and silently adjusts scheduled durations. Requires 2+ history entries to activate.
 - **Partial Session Tracker**: Accumulates duration across multiple "Partially Completed" feedback submissions. On final completion, sums all sessions and records the true total in task history.
-- **Database (PostgreSQL on Neon)**: Ten tables storing all user data. Auto-created on first backend run via `init_db()`.
+- **Recurring Task Engine**: Templates with `isRecurring=1` lazily generate child task instances for each matching weekday within the next 7 days on every `GET /tasks` call. Child instances are not templates and do not re-generate.
+- **Push Notification Daemon**: A background thread polls the database every 60 seconds, checks generated schedules for blocks starting within the user's configured lead window, and fires Web Push messages via VAPID. Expired subscriptions (HTTP 410) are automatically removed.
+- **Canvas Sync**: Two endpoints — one imports assignments as tasks (with `externalId` deduplication), the other imports recurring class sessions as commitments from the Canvas calendar events API.
+- **Google Calendar Sync**: OAuth2 flow with offline access and automatic token refresh. Import pulls upcoming events as one-off commitments. Export pushes the generated schedule to Google Calendar, tagging each event with a private `source=atlas` property to prevent re-import loops.
+- **Database (PostgreSQL on Neon)**: Sixteen tables storing all user data. Auto-created on first backend run via `init_db()`.
 - **AI (Claude API)**: The `/parse-task` endpoint sends natural language input to `claude-sonnet-4-6` and returns structured task JSON. Requires `ANTHROPIC_API_KEY`.
 - **Email (SendGrid)**: Handles password reset links (token-based, 1-hour expiry) and username recovery emails. Requires `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL`.
 
@@ -153,7 +177,6 @@ Backend — FastAPI (Render)
 ## Quick Demo
 
 **Input:**
-```
 Tasks:
   - "Study for Computer Science exam" — due Friday, 3 hours estimated, high difficulty
   - "Review flashcards" — due Thursday, 30 min, low difficulty
@@ -167,10 +190,8 @@ Availability:
 Settings:
   - Morning buffer: 30 min, Max deep work block: 90 min
   - Shower: morning, 15 min
-```
 
 **Generated schedule:**
-```
 8:00 – 8:30   🌅 Morning routine
 8:30 – 8:45   🚿 Shower
 8:45 – 10:15  ⭐ Study for Computer Science exam (Deep Work — peak hours)
@@ -184,34 +205,33 @@ Settings:
 5:00 – 9:00   📌 Work shift
 9:00 – 9:20   🚗 Commute back from Work shift
 10:30 – 11:00 🌙 Wind down
-```
 
 **Schedule notes (after 2 weeks of use):**
-```
 ⚠ Study for CS exam: duration adjusted from 180 to 243 min (+35% based on Studying history)
 ⚠ Review flashcards: duration adjusted from 30 to 25 min (-17% based on Homework history)
-```
 
 **Dashboard suggestions:**
-```
 💡 You tend to underestimate Studying tasks by 35% — try adding 35% more time when estimating.
-💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — try scheduling deep work then.
-```
+💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — will schedule deep work then.
 
 ---
 
 ## Project Structure
 
-```
 Atlas/
 ├── frontend/
 │   └── src/
 │       ├── App.js              # All UI components and schedule generation logic
-│       ├── Atlas_Logo.png
+│       ├── Onboarding.js       # Guided three-step setup flow for new users
+│       ├── ThemeContext.js     # Theme system and category/emoji mapping
+│       ├── theme.css           # CSS custom properties for all themes
+│       ├── App.css             # Layout and component styles
+│       ├── Atlas_Logo192.png
 │       └── index.js
+│   └── public/
+│       └── sw.js               # Service worker for Web Push notifications
 └── backend/
-    └── main.py                 # FastAPI app — all REST endpoints, DB logic, and AI integration
-```
+    └── main.py                 # FastAPI app — all REST endpoints, DB logic, and integrations
 
 All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only — no business logic lives there.
 
@@ -222,15 +242,28 @@ All schedule generation is pure frontend logic (`generateSchedule()` in App.js).
 ### Backend
 ```bash
 cd backend
-pip install fastapi uvicorn pydantic psycopg2-binary bcrypt python-jose httpx python-multipart
+pip install fastapi uvicorn pydantic psycopg2-binary bcrypt python-jose httpx python-multipart pywebpush
 ```
 
 Set the following environment variables:
 ```
 DATABASE_URL=your_postgresql_connection_string
+SECRET_KEY=your_jwt_secret_key
 ANTHROPIC_API_KEY=your_anthropic_api_key
 SENDGRID_API_KEY=your_sendgrid_api_key
 SENDGRID_FROM_EMAIL=your_verified_sender_email
+VAPID_PUBLIC_KEY=your_vapid_public_key
+VAPID_PRIVATE_KEY=your_vapid_private_key
+GOOGLE_CLIENT_ID=your_google_oauth_client_id
+GOOGLE_CLIENT_SECRET=your_google_oauth_client_secret
+GOOGLE_REDIRECT_URI=https://your-backend-url/google/callback
+FRONTEND_URL=https://your-frontend-url
+BACKEND_URL=https://your-backend-url
+```
+
+Generate VAPID keys once (do not regenerate — this rotates push subscriptions):
+```bash
+python -c "from py_vapid import Vapid; v = Vapid(); v.generate_keys(); print(v.public_key, v.private_key)"
 ```
 
 ```bash
@@ -261,16 +294,21 @@ Runs at `http://localhost:3000`.
 | Table | Purpose |
 |---|---|
 | `users` | User accounts with hashed passwords |
-| `tasks` | Task metadata, estimates, and completion feedback |
+| `tasks` | Task metadata, estimates, completion feedback, and recurrence config |
 | `task_history` | Immutable record of each completed task session |
 | `task_dependencies` | Dependency relationships between tasks |
 | `partial_sessions` | Tracks cumulative duration across partial task completions |
 | `meals` | Meals with fixed or flexible time scheduling |
-| `commitments` | Recurring commitments with commute and flex support |
+| `commitments` | Recurring and one-off commitments with commute, flex, and repeat-until support |
 | `sleep_schedule` | Planned and actual wake/sleep times |
-| `settings` | User preferences (clock format, buffers, energy pattern, shower, etc.) |
+| `settings` | User preferences (clock format, buffers, energy pattern, shower, notifications, etc.) |
 | `password_reset_tokens` | Token-based password reset flow (1-hour expiry) |
 | `feedback` | User-submitted bug reports and feature requests |
+| `generated_schedules` | Persisted daily schedule blocks (used by push notification daemon) |
+| `notified_blocks` | Deduplication log for push notifications already sent |
+| `push_subscriptions` | Web Push endpoint + VAPID keys per user device |
+| `canvas_credentials` | Canvas domain and access token per user |
+| `google_calendar_credentials` | Google OAuth2 access token, refresh token, and expiry per user |
 
 ---
 
@@ -281,11 +319,11 @@ Runs at `http://localhost:3000`.
 | POST | `/auth/register` | Create a new user account |
 | POST | `/auth/login` | Log in and receive a JWT token |
 | PUT | `/auth/update-account` | Update username, email, or password |
-| DELETE | `/auth/delete-account` | Permanently delete account and all associated data |
+| DELETE | `/auth/delete-account` | Permanently delete account and all data |
 | POST | `/auth/forgot-password` | Send password reset link via email |
 | POST | `/auth/reset-password` | Reset password via token |
 | POST | `/auth/forgot-username` | Send username reminder via email |
-| GET/POST | `/tasks` | List all / add task |
+| GET/POST | `/tasks` | List all / add task (GET lazily generates recurring instances) |
 | PUT | `/tasks/{id}` | Edit task |
 | DELETE | `/tasks/{id}` | Delete task |
 | PATCH | `/tasks/{id}/feedback` | Submit completion feedback (supports partial sessions) |
@@ -307,8 +345,23 @@ Runs at `http://localhost:3000`.
 | GET/POST | `/settings` | Get all / save a setting |
 | POST | `/parse-task` | Parse natural language into structured task JSON (AI) |
 | POST | `/feedback` | Submit bug report or feature request |
+| POST | `/schedule/save` | Persist generated schedule for push notification targeting |
+| GET | `/push/vapid-public-key` | Return VAPID public key for client subscription |
+| POST | `/push/subscribe` | Register a Web Push subscription |
+| POST | `/push/unsubscribe` | Remove a Web Push subscription |
+| POST | `/canvas/connect` | Save Canvas domain and access token |
+| DELETE | `/canvas/disconnect` | Remove Canvas credentials |
+| GET | `/canvas/status` | Check Canvas connection status |
+| POST | `/canvas/sync/assignments` | Import assignments as tasks from Canvas |
+| POST | `/canvas/sync/schedule` | Import class sessions as commitments from Canvas |
+| GET | `/google/auth-url` | Return Google OAuth2 authorization URL |
+| GET | `/google/callback` | Handle OAuth2 redirect and store tokens |
+| DELETE | `/google/disconnect` | Remove Google Calendar credentials |
+| GET | `/google/status` | Check Google Calendar connection status |
+| POST | `/google/sync/import` | Import upcoming Google Calendar events as commitments |
+| POST | `/google/sync/export` | Push generated schedule blocks to Google Calendar |
 
-All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token in the `Authorization` header.
+All endpoints except `/auth/register`, `/auth/login`, `/auth/forgot-password`, `/auth/reset-password`, `/auth/forgot-username`, and `/google/callback` require a `Bearer` token in the `Authorization` header.
 
 ---
 
@@ -321,7 +374,7 @@ All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token
 - Priority scoring: `0.35×urgency + 0.25×importance + 0.20×preference + 0.15×difficulty + 0.05×consistency`
 - Daily availability: sleep schedule, fixed and flexible meals and commitments
 - Commute time (to and from) for meals and commitments
-- Shower scheduling (duration + morning/evening/both preference)
+- Shower scheduling (duration + morning/evening/after-gym preference)
 - Schedule generation with morning routine, breaks, peak hours, deep/light alternation
 - Full persistence for all data types
 - Full CRUD for tasks, meals, commitments
@@ -332,34 +385,36 @@ All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token
 - Task timer with Start/Stop
 - History system with per-task and overall accuracy
 - Category breakdown stats
-- Duration adjustment engine: per-category multipliers from history, applied to schedule and task display
+- Duration adjustment engine: per-category multipliers from history, applied silently at schedule time
 - Personalized priority scoring: consistency factor driven by real completion rate per category
-- Weekly analytics dashboard: task counts, time estimated vs actual, accuracy, category breakdown
-- Productive time analysis: completion rate, average duration, average accuracy per time period
-- Schedule adjustment summary: notes on duration adjustments, unscheduled tasks, and user-flagged blocks
+- Weekly analytics dashboard: task counts, time estimated vs. actual, accuracy, category breakdown
+- Productive time analysis: completion rate per time period
+- Schedule adjustment summary: duration adjustments, unscheduled tasks, user-flagged blocks
 - Smart suggestions: overdue tasks, underestimation patterns, peak productivity nudges
-- Environment-aware debug logging: logs only in development, stripped in production builds
 
 **Phase 3 — Complete:**
 - User accounts and authentication (JWT + bcrypt)
 - Full account management: update credentials, forgot password/username via SendGrid, delete account
 - PostgreSQL database (Neon)
-- Frontend deployed to Vercel
-- Backend deployed to Render (with keep-alive ping to prevent free-tier spin-down)
+- Frontend deployed to Vercel, backend deployed to Render (keep-alive ping)
 - Natural language task input via Anthropic Claude API
 - Task dependencies with blocked task detection and schedule exclusion
 - Cumulative duration tracking across partial task completions
 - Schedule block flagging with user notes
-- Deep work peak-hour prioritization in schedule generator
-- Logged actual sleep/meal times are retroactive only (do not shift today's schedule)
+- Recurring weekly tasks via template-based lazy instantiation
+- Commitment repeat-until options (forever / until date / fixed occurrences)
+- Canvas LMS integration: assignment import, class schedule import
+- Google Calendar two-way sync: OAuth2, import, export, automatic token refresh
+- Push notifications: VAPID, service worker, configurable lead time and block type filters
+- Guided onboarding flow for new users (sleep → meal → task)
+- `fetchJsonOrLogout` — catches stale 401s and clears tokens to prevent render crashes
 
 **Phase 4 — Planned:**
 - UI redesign with Tailwind CSS
-- Timeline view for schedule display
 - Mobile responsiveness
-- Dark mode
-- AI suggestions and chat assistant
-- Per-day availability (different meals/sleep/commitments per day)
+- AI schedule chat assistant ("move my workout earlier")
+- Weekly review summary email
+- Smart duration suggestions at task-add time
 
 ---
 
@@ -367,6 +422,6 @@ All endpoints except `/auth/register` and `/auth/login` require a `Bearer` token
 
 - **ML-based duration prediction**: train a lightweight regression model on task history to predict durations more accurately than simple averages, incorporating task type, category, time of day, and self-reported difficulty
 - **Disruption recovery**: detect when the day goes off-plan (late wake, skipped meal) and regenerate the remaining schedule in real time
-- **Calendar API integration**: pull commitments directly from Google Calendar instead of manual entry
-- **Weekly and semester views**: plan across multiple days with deadline-aware backscheduling
+- **Per-day availability**: different meals, sleep times, and commitments for each day of the week
 - **Optimization algorithm research**: the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
+```
