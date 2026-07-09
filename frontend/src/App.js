@@ -1517,8 +1517,7 @@ function App() {
     const firstBlockedEnd = blockedRanges.length > 0
       ? Math.max(...blockedRanges.map((b) => b.end))
       : wake;
-    let currentTime = getNextFreeStart(Math.max(wake, firstBlockedEnd > wake ? firstBlockedEnd + savedTransitionGap : wake));
-    let previousTaskId = null;
+    let currentTime = getNextFreeStart(Math.max(wake, firstBlockedEnd > wake ? firstBlockedEnd : wake));
     let previousTaskType = null;
     let safetyCounter = 0;
 
