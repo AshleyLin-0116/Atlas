@@ -1616,7 +1616,7 @@ function App() {
           }
           // Only pad with a transition gap if there's room left over after doing so;
           // otherwise use every remaining minute for the task itself.
-          const fillStart = (gapEnd - gapCursor > savedTransitionGap)
+          let fillStart = (gapEnd - gapCursor > savedTransitionGap)
             ? gapCursor + savedTransitionGap
             : gapCursor;
           if (fillStart > gapCursor) {
@@ -1624,6 +1624,8 @@ function App() {
             const alreadyHasTransition = schedule.some((b) => b.label === 'Transition' && b.end === gapCursorStr);
             if (!alreadyHasTransition) {
               schedule.push({ start: toTimeString(gapCursor), end: toTimeString(fillStart), label: 'Transition', type: 'buffer' });
+            } else {
+              fillStart = gapCursor;
             }
           }
           const remainingGap = gapEnd - fillStart;
