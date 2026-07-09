@@ -84,6 +84,7 @@ Feedback Collection (after each task)
 History & Analytics
   Per-category multipliers, weekly stats, productive time analysis,
   completion rates by time of day, smart suggestions
+```
 
 ---
 
@@ -110,6 +111,7 @@ No ORM — raw SQL for transparency and simplicity.
 
 ## Architecture
 
+```
 User (Browser)
       │
       ▼
@@ -155,6 +157,7 @@ Backend — FastAPI (Render)
             - Two-way event sync (OAuth2 + token refresh)
           Canvas REST API
             - Assignment and class schedule import
+```
 
 ### Component Responsibilities
 
@@ -177,6 +180,7 @@ Backend — FastAPI (Render)
 ## Quick Demo
 
 **Input:**
+```
 Tasks:
   - "Study for Computer Science exam" — due Friday, 3 hours estimated, high difficulty
   - "Review flashcards" — due Thursday, 30 min, low difficulty
@@ -190,8 +194,10 @@ Availability:
 Settings:
   - Morning buffer: 30 min, Max deep work block: 90 min
   - Shower: morning, 15 min
+```
 
 **Generated schedule:**
+```
 8:00 – 8:30   🌅 Morning routine
 8:30 – 8:45   🚿 Shower
 8:45 – 10:15  ⭐ Study for Computer Science exam (Deep Work — peak hours)
@@ -205,19 +211,25 @@ Settings:
 5:00 – 9:00   📌 Work shift
 9:00 – 9:20   🚗 Commute back from Work shift
 10:30 – 11:00 🌙 Wind down
+```
 
 **Schedule notes (after 2 weeks of use):**
+```
 ⚠ Study for CS exam: duration adjusted from 180 to 243 min (+35% based on Studying history)
 ⚠ Review flashcards: duration adjusted from 30 to 25 min (-17% based on Homework history)
+```
 
 **Dashboard suggestions:**
+```
 💡 You tend to underestimate Studying tasks by 35% — try adding 35% more time when estimating.
-💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — will schedule deep work then.
+💡 Your best work happens during Morning (6:00am–12:00pm) (87.5% completion rate) — try scheduling deep work then.
+```
 
 ---
 
 ## Project Structure
 
+```
 Atlas/
 ├── frontend/
 │   └── src/
@@ -232,6 +244,7 @@ Atlas/
 │       └── sw.js               # Service worker for Web Push notifications
 └── backend/
     └── main.py                 # FastAPI app — all REST endpoints, DB logic, and integrations
+```
 
 All schedule generation is pure frontend logic (`generateSchedule()` in App.js). The backend is a stateless persistence layer only — no business logic lives there.
 
