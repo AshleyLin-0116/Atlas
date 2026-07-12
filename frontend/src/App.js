@@ -122,6 +122,8 @@ function App() {
   const clamp = (value, min, max) => Math.min(Math.max(Number(value), min), max);
 
   // ── Auth state ──
+  const [isPaid, setIsPaid] = useState(false);
+  const [betaAccess, setBetaAccess] = useState(true);
   const [token, setToken] = useState(localStorage.getItem('atlas_token') || null);
   const [username, setUsername] = useState(localStorage.getItem('atlas_username') || '');
   const [authMode, setAuthMode] = useState('login');
@@ -139,6 +141,11 @@ function App() {
   const [resetError, setResetError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [onboardingDone, setOnboardingDone] = useState(false);
+  const [showAiChat, setShowAiChat] = useState(false);
+  const [showAiLockedModal, setShowAiLockedModal] = useState(false);
+  const [aiMessages, setAiMessages] = useState([]);
+  const [aiInput, setAiInput] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
 
   // ── Core data ──
   const [tasks, setTasks] = useState([]);
@@ -499,6 +506,8 @@ function App() {
         localStorage.setItem('atlas_username', data.username);
         setToken(data.access_token);
         setUsername(data.username);
+        setIsPaid(data.is_paid || false);
+        setBetaAccess(data.beta_access ?? true);
         setAuthError('');
       })
       .catch((err) => setAuthError(err.message));
@@ -530,6 +539,8 @@ function App() {
         localStorage.setItem('atlas_username', data.username);
         setToken(data.access_token);
         setUsername(data.username);
+        setIsPaid(data.is_paid || false);
+        setBetaAccess(data.beta_access ?? true);
         setAuthError('');
       })
       .catch((err) => setAuthError(err.message));
@@ -2612,6 +2623,30 @@ function App() {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // AI Handlers
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  async function handleAiChat() {
+    if (!aiInput.trim() || aiLoading) return;
+    const userMessage = aiInput.trim();
+    setAiInput('');
+    setAiMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
+    setAiLoading(true);
+    try {
+      const response = await authFetch(`${process.env.REACT_APP_API_URL}/chat`, {
+        method: 'POST',
+        body: JSON.stringify({ message: userMessage, history: aiMessages })
+      });
+      if (!response.ok) throw new Error('Chat failed');
+      const data = await response.json();
+      setAiMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
+    } catch (err) {
+      setAiMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry, something went wrong. Try again.' }]);
+    }
+    setAiLoading(false);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // DERIVED STATE
   // ─────────────────────────────────────────────────────────────────────────────
   const activeTaskType = userOverrideType !== null ? userOverrideType : autoTaskType;
@@ -4178,6 +4213,78 @@ function App() {
         </div>
       )}
 
+      {showAiLockedModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={() => setShowAiLockedModal(false)}>
+          <div style={{ background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', padding: '28px 24px 40px', width: '100%', maxWidth: 480 }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 36, textAlign: 'center', marginBottom: 12 }}>🔒</div>
+            <h2 style={{ fontWeight: 700, fontSize: 18, textAlign: 'center', marginBottom: 8 }}>AI Assistant</h2>
+            <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 24 }}>
+              The AI assistant is a premium feature. Unlock it with a one-time payment to get smart scheduling, natural language input, and your personal Atlas guide.
+            </p>
+            <button className="btn-primary" type="button" onClick={() => setShowAiLockedModal(false)}>
+              Maybe later
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showAiChat && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={() => setShowAiChat(false)}>
+          <div style={{ background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', padding: '20px 0 0', width: '100%', maxWidth: 480, height: '75vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px 16px', borderBottom: '1px solid var(--border-color)' }}>
+              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✦</div>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Atlas AI</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Your scheduling assistant</div>
+              </div>
+              <button type="button" onClick={() => setShowAiChat(false)}
+                style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 20, color: 'var(--text-muted)', padding: 4 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 14, color: 'var(--text-secondary)', alignSelf: 'flex-start', maxWidth: '85%' }}>
+                Hi! I'm your Atlas assistant. I can help you add tasks, plan your day, and give scheduling advice. What do you need?
+              </div>
+              {aiMessages.map((msg, i) => (
+                <div key={i} style={{
+                  background: msg.role === 'user' ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                  color: msg.role === 'user' ? 'white' : 'var(--text-secondary)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '12px 14px',
+                  fontSize: 14,
+                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                  maxWidth: '85%',
+                }}>
+                  {msg.content}
+                </div>
+              ))}
+              {aiLoading && (
+                <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 14, color: 'var(--text-muted)', alignSelf: 'flex-start' }}>
+                  Thinking...
+                </div>
+              )}
+            </div>
+            <div style={{ padding: '12px 16px 28px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
+              <input
+                type="text"
+                placeholder="Ask me anything about your schedule..."
+                style={{ flex: 1 }}
+                value={aiInput}
+                onChange={(e) => setAiInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) handleAiChat(); }}
+              />
+              <button className="btn-primary" type="button" style={{ width: 'auto', padding: '0 16px' }}
+                onClick={handleAiChat} disabled={aiLoading}>
+                Send
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bottom nav */}
       <div className="bottom-nav">
         <button type="button" className="nav-item" onClick={() => setActiveTab('schedule')}>
@@ -4190,8 +4297,14 @@ function App() {
         </button>
         <div className="nav-fab-wrap">
           <button type="button" className="nav-fab"
-            onClick={() => setActiveTab(activeTab === 'tasks' ? 'schedule' : 'tasks')}>
-            +
+            onClick={() => {
+              if (isPaid || betaAccess) {
+                setShowAiChat(true);
+              } else {
+                setShowAiLockedModal(true);
+              }
+            }}>
+            ✦
           </button>
         </div>
         <button type="button" className="nav-item" onClick={() => setActiveTab('availability')}>

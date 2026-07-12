@@ -28,6 +28,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://atlas-delta-sable.vercel.app")
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://atlas-backend-476l.onrender.com")
+BETA_MODE = os.environ.get("BETA_MODE", "false").lower() == "true"
 
 # ─── APP SETUP ────────────────────────────────────────────────────────────────
 
@@ -307,6 +308,15 @@ def init_db():
             connected_at TEXT DEFAULT (now()::text)
         )
     """)
+    cur.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS is_paid INTEGER DEFAULT 0
+    """)
+    cur.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS beta_access INTEGER DEFAULT 1
+    """)
+    cur.execute("""
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS email_report_day TEXT DEFAULT 'Sunday'
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -567,7 +577,13 @@ def register(user: UserRegister):
     cur.close()
     conn.close()
     token = create_token(user_id, user.username)
-    return {"access_token": token, "token_type": "bearer", "username": user.username}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user.username,
+        "is_paid": False,
+        "beta_access": BETA_MODE or True
+    }
 
 @app.post("/auth/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -582,7 +598,13 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if not bcrypt.checkpw(form_data.password.encode('utf-8'), user['password_hash'].encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid username or password")
     token = create_token(user['id'], user['username'])
-    return {"access_token": token, "token_type": "bearer", "username": user['username']}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "username": user['username'],
+        "is_paid": bool(user['is_paid']),
+        "beta_access": BETA_MODE or bool(user['beta_access'])
+    }
 
 @app.post("/auth/forgot-password")
 async def forgot_password(body: dict):
@@ -1278,6 +1300,36 @@ Task: \"{request['text']}\""""
             return json.loads(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse task: {str(e)}")
+    
+@app.post("/chat")
+async def chat(request: dict, user_id: int = Depends(get_current_user)):
+    message = request.get("message", "").strip()
+    history = request.get("history", [])
+    if not message:
+        raise HTTPException(status_code=400, detail="Message is required")
+    messages = [{"role": m["role"], "content": m["content"]} for m in history]
+    messages.append({"role": "user", "content": message})
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": os.environ.get("ANTHROPIC_API_KEY"),
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                },
+                json={
+                    "model": "claude-sonnet-4-6",
+                    "max_tokens": 1000,
+                    "system": "You are Atlas AI, a friendly and practical scheduling assistant built into the Atlas daily planner app. Help the user manage their tasks, plan their day, and give scheduling advice. Be concise and actionable.",
+                    "messages": messages
+                },
+                timeout=30.0
+            )
+            data = response.json()
+            return {"reply": data["content"][0]["text"]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
     
 # ── Feedback ──
 
