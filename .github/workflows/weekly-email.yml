@@ -1,0 +1,17 @@
+name: Weekly Email Cron
+
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+
+jobs:
+  trigger:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call weekly-email endpoint
+        run: |
+          curl -s -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"secret\": \"${{ secrets.CRON_SECRET }}\"}" \
+            https://atlas-backend-476l.onrender.com/cron/weekly-email
