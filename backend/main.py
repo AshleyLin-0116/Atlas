@@ -10,7 +10,7 @@ import bcrypt
 import httpx
 import psycopg2
 import psycopg2.extras
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
@@ -19,6 +19,10 @@ from pywebpush import webpush, WebPushException
 import json as jsonlib
 from dotenv import load_dotenv
 load_dotenv()
+import stripe
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET")
+STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID")  # one-time price ID from Stripe dashboard
 
 # ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
@@ -1958,6 +1962,10 @@ async def sync_google_export(body: ScheduleSave, user_id: int = Depends(get_curr
 class EmailReportDayBody(BaseModel):
     day: str
 
+class CheckoutSession(BaseModel):
+    success_url: str
+    cancel_url: str
+
 @app.post("/settings/email-report-day")
 def save_email_report_day(body: EmailReportDayBody, user_id: int = Depends(get_current_user)):
     valid_days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -1976,13 +1984,59 @@ def save_email_report_day(body: EmailReportDayBody, user_id: int = Depends(get_c
     conn.close()
     return {"message": "Email report day saved", "day": body.day}
 
-# ─── Weekly Email Cron Skeleton ───────────────────────────────────────────────
+# ── Stripe ──
 
-CRON_SECRET = os.environ.get("CRON_SECRET", "")  # set this in Render env vars
+@app.post("/stripe/create-checkout-session")
+async def create_checkout_session(body: CheckoutSession, user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT email, username FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    session = stripe.checkout.Session.create(
+        payment_method_types=["card"],
+        line_items=[{"price": STRIPE_PRICE_ID, "quantity": 1}],
+        mode="payment",
+        success_url=body.success_url,
+        cancel_url=body.cancel_url,
+        customer_email=user["email"],
+        metadata={"user_id": str(user_id)},
+    )
+    return {"url": session.url}
+
+
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    from fastapi import Request
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        user_id = int(session["metadata"]["user_id"])
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("UPDATE users SET is_paid = 1 WHERE id = %s", (user_id,))
+        conn.commit()
+        cur.close()
+        conn.close()
+
+    return {"received": True}
+
+# ─── Weekly Email Cron ────────────────────────────────────────────────────────
+
+CRON_SECRET = os.environ.get("CRON_SECRET", "")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "Atlas <reports@yourdomain.com>")
 
 @app.post("/cron/weekly-email")
 async def weekly_email_cron(request: dict = {}):
-    # Verify the request is from our cron caller, not a random POST
     secret = request.get("secret", "")
     if CRON_SECRET and secret != CRON_SECRET:
         raise HTTPException(status_code=403, detail="Forbidden")
@@ -1990,8 +2044,7 @@ async def weekly_email_cron(request: dict = {}):
     conn = get_db()
     cur = conn.cursor()
 
-    # Find all users whose email_report_day matches today
-    today_name = datetime.now().strftime("%A")  # e.g. "Sunday"
+    today_name = datetime.now().strftime("%A")
     cur.execute(
         "SELECT id, username, email, email_report_day FROM users WHERE email_report_day = %s",
         (today_name,)
@@ -1999,10 +2052,10 @@ async def weekly_email_cron(request: dict = {}):
     users = cur.fetchall()
 
     results = []
+
     for user in users:
         user_id = user['id']
 
-        # Pull last 7 days of task history
         cur.execute(
             """SELECT taskName, category, estimated_duration, actual_duration, completion_status, completed_at
             FROM task_history
@@ -2012,28 +2065,100 @@ async def weekly_email_cron(request: dict = {}):
         )
         history = cur.fetchall()
 
-        # Compute basic stats
         total = len(history)
         completed = sum(1 for h in history if h['completion_status'] == 'Completed')
+        partial = sum(1 for h in history if h['completion_status'] == 'Partially Completed')
+        not_done = sum(1 for h in history if h['completion_status'] == 'Not Completed')
         total_estimated = sum(h['estimated_duration'] or 0 for h in history)
         total_actual = sum(h['actual_duration'] or 0 for h in history)
+        accuracy = round((total_estimated / total_actual) * 100, 1) if total_actual > 0 else None
 
-        report = {
+        # Build task summary lines for Claude
+        task_lines = "\n".join(
+            f"- {h['taskname']} ({h['category'] or 'uncategorized'}): "
+            f"{h['completion_status']}, estimated {h['estimated_duration'] or '?'} min, "
+            f"actual {h['actual_duration'] or '?'} min"
+            for h in history
+        ) or "No tasks logged this week."
+
+        stats_block = (
+            f"Tasks logged: {total}\n"
+            f"Completed: {completed} | Partial: {partial} | Not completed: {not_done}\n"
+            f"Total estimated: {int(total_estimated)} min | Total actual: {int(total_actual)} min\n"
+            f"Estimation accuracy: {accuracy}%" if accuracy else ""
+        )
+
+        # Generate Claude narrative
+        narrative = ""
+        if RESEND_API_KEY and os.environ.get("ANTHROPIC_API_KEY"):
+            try:
+                async with httpx.AsyncClient() as client:
+                    claude_response = await client.post(
+                        "https://api.anthropic.com/v1/messages",
+                        headers={
+                            "x-api-key": os.environ.get("ANTHROPIC_API_KEY"),
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json"
+                        },
+                        json={
+                            "model": "claude-sonnet-4-6",
+                            "max_tokens": 400,
+                            "messages": [{
+                                "role": "user",
+                                "content": (
+                                    f"You are Atlas AI writing a friendly weekly summary email for {user['username']}.\n\n"
+                                    f"This week's stats:\n{stats_block}\n\n"
+                                    f"Task breakdown:\n{task_lines}\n\n"
+                                    "Write 2–3 short, encouraging paragraphs. Mention specific tasks by name where possible. "
+                                    "Note patterns (over/underestimation, strong categories). End with one actionable tip. "
+                                    "Tone: warm, direct, like a coach. No markdown, plain text only."
+                                )
+                            }]
+                        },
+                        timeout=30.0
+                    )
+                    narrative = claude_response.json()["content"][0]["text"].strip()
+            except Exception as e:
+                narrative = f"[Narrative generation failed: {e}]"
+
+        # Send via Resend
+        sent = False
+        if RESEND_API_KEY and user['email']:
+            email_body = (
+                f"Hi {user['username']},\n\n"
+                f"Here's your Atlas weekly report.\n\n"
+                f"── THIS WEEK ──\n{stats_block}\n\n"
+                + (f"── YOUR WEEK IN REVIEW ──\n{narrative}\n\n" if narrative else "")
+                + f"── TASKS LOGGED ──\n{task_lines}\n\n"
+                f"Keep it up,\nThe Atlas Team\n"
+            )
+            try:
+                async with httpx.AsyncClient() as client:
+                    resend_response = await client.post(
+                        "https://api.resend.com/emails",
+                        headers={
+                            "Authorization": f"Bearer {RESEND_API_KEY}",
+                            "Content-Type": "application/json"
+                        },
+                        json={
+                            "from": RESEND_FROM_EMAIL,
+                            "to": [user['email']],
+                            "subject": f"Your Atlas week in review — {today_name}",
+                            "text": email_body
+                        },
+                        timeout=15.0
+                    )
+                    sent = resend_response.is_success
+            except Exception as e:
+                sent = False
+
+        results.append({
             "user_id": user_id,
             "username": user['username'],
-            "email": user['email'],
-            "email_report_day": user['email_report_day'],
-            "week_stats": {
-                "total_tasks": total,
-                "completed": completed,
-                "total_estimated_min": total_estimated,
-                "total_actual_min": total_actual,
-            },
-            "history_count": len(history),
-            # TODO: generate narrative with Claude once Resend is wired
-            # TODO: send via Resend API
-        }
-        results.append(report)
+            "stats": {"total": total, "completed": completed, "accuracy": accuracy},
+            "narrative_chars": len(narrative),
+            "email_sent": sent,
+        })
 
     cur.close()
     conn.close()
@@ -2041,6 +2166,5 @@ async def weekly_email_cron(request: dict = {}):
     return {
         "message": f"Weekly email cron ran for {today_name}",
         "users_matched": len(results),
-        "reports": results  # remove this in prod — just for debugging
+        "results": results
     }
-

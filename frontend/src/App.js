@@ -484,9 +484,13 @@ function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('reset_token');
-    if (token) {
-      setResetToken(token);
+    const resetTok = params.get('reset_token');
+    if (resetTok) {
+      setResetToken(resetTok);
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    if (params.get('payment') === 'success') {
+      setIsPaid(true);
       window.history.replaceState({}, document.title, window.location.pathname);
     }
   }, []);
@@ -2645,6 +2649,25 @@ function App() {
   // AI Handlers
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Stripe ──
+  async function handleUpgrade() {
+    try {
+      const response = await authFetch(`${process.env.REACT_APP_API_URL}/stripe/create-checkout-session`, {
+        method: 'POST',
+        body: JSON.stringify({
+          success_url: `${window.location.origin}?payment=success`,
+          cancel_url: window.location.href,
+        }),
+      });
+      const data = await response.json();
+      if (data.url) {
+        window.location.href = data.url;
+      }
+    } catch (err) {
+      console.error('Stripe checkout failed:', err);
+    }
+  }
+
   async function handleAiChat() {
     if (aiMessages.length === 0) {
       setAstronautMood('wave');
@@ -4293,7 +4316,10 @@ function App() {
             <p style={{ fontSize: 14, color: 'var(--text-secondary)', textAlign: 'center', marginBottom: 24 }}>
               The AI assistant is a premium feature. Unlock it with a one-time payment to get smart scheduling, natural language input, and your personal Atlas guide.
             </p>
-            <button className="btn-primary" type="button" onClick={() => setShowAiLockedModal(false)}>
+            <button className="btn-primary" type="button" onClick={handleUpgrade}>
+              Unlock AI — $2.99
+            </button>
+            <button className="btn-secondary" type="button" onClick={() => setShowAiLockedModal(false)} style={{ marginTop: 8 }}>
               Maybe later
             </button>
           </div>
