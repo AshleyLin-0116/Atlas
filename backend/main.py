@@ -1,5 +1,6 @@
 import secrets
 import threading
+import time
 import urllib.request
 import os
 from datetime import datetime, timedelta, timezone
@@ -29,6 +30,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://atlas-delta-sable.vercel.app")
 BACKEND_URL = os.environ.get("BACKEND_URL", "https://atlas-backend-476l.onrender.com")
 BETA_MODE = os.environ.get("BETA_MODE", "false").lower() == "true"
+CHAT_DAILY_LIMIT = 50
 
 # ─── APP SETUP ────────────────────────────────────────────────────────────────
 
@@ -317,6 +319,15 @@ def init_db():
     cur.execute("""
         ALTER TABLE users ADD COLUMN IF NOT EXISTS email_report_day TEXT DEFAULT 'Sunday'
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS chat_usage (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            usage_date TEXT NOT NULL,
+            count INTEGER NOT NULL DEFAULT 0,
+            UNIQUE(user_id, usage_date)
+        )
+    """)
     conn.commit()
     cur.close()
     conn.close()
@@ -332,7 +343,7 @@ def keep_alive():
                 urllib.request.urlopen(f'{BACKEND_URL}/')
             except Exception:
                 pass
-            threading.Event().wait(600)
+            time.sleep(600)
     t = threading.Thread(target=ping, daemon=True)
     t.start()
 
@@ -413,7 +424,9 @@ def check_upcoming_blocks():
             conn.close()
         except Exception as err:
             print(f"Push checker error: {err}")
-        threading.Event().wait(60)
+        time.sleep(60)
+
+threading.Thread(target=check_upcoming_blocks, daemon=True).start()
 
 # ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
 
@@ -582,7 +595,7 @@ def register(user: UserRegister):
         "token_type": "bearer",
         "username": user.username,
         "is_paid": False,
-        "beta_access": BETA_MODE or True
+        "beta_access": BETA_MODE
     }
 
 @app.post("/auth/login")
@@ -1300,15 +1313,107 @@ Task: \"{request['text']}\""""
             return json.loads(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse task: {str(e)}")
-    
+
+def check_and_increment_chat_usage(user_id: int, conn, cur) -> int:
+    """Returns current count after increment, raises 429 if over limit."""
+    today = datetime.now().date().isoformat()
+    cur.execute(
+        """INSERT INTO chat_usage (user_id, usage_date, count)
+        VALUES (%s, %s, 1)
+        ON CONFLICT (user_id, usage_date) DO UPDATE SET count = chat_usage.count + 1
+        RETURNING count""",
+        (user_id, today)
+    )
+    count = cur.fetchone()['count']
+    conn.commit()
+    if count > CHAT_DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily chat limit reached ({CHAT_DAILY_LIMIT} messages). Resets at midnight."
+        )
+    return count
+
 @app.post("/chat")
 async def chat(request: dict, user_id: int = Depends(get_current_user)):
     message = request.get("message", "").strip()
     history = request.get("history", [])
+    schedule_context = request.get("schedule_context", {})
     if not message:
         raise HTTPException(status_code=400, detail="Message is required")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Rate limit check — raises 429 if exceeded
+    check_and_increment_chat_usage(user_id, conn, cur)
+
+    # ── Build schedule context string ──────────────────────────────────────
+
+    cur.execute("""SELECT * FROM tasks WHERE user_id = %s AND (completion_status != 'Completed' OR completion_status IS NULL)""", (user_id,))
+    tasks = [normalize(r) for r in cur.fetchall()]
+
+    cur.execute("SELECT * FROM sleep_schedule WHERE user_id = %s ORDER BY id DESC LIMIT 1", (user_id,))
+    sleep = normalize(cur.fetchone())
+
+    cur.execute("SELECT * FROM meals WHERE user_id = %s", (user_id,))
+    meals = [normalize(r) for r in cur.fetchall()]
+
+    cur.execute("SELECT * FROM commitments WHERE user_id = %s", (user_id,))
+    commitments = [normalize(r) for r in cur.fetchall()]
+
+    cur.close()
+    conn.close()
+
+    from datetime import date
+    today = date.today().strftime("%A, %B %d, %Y")
+
+    task_lines = "\n".join(
+        f"- {t['taskName']} (due {t['deadline']}, {t['duration']}min, category: {t.get('category','?')})"
+        for t in tasks
+    ) or "No active tasks."
+
+    meal_lines = "\n".join(
+        f"- {m['mealName']}: {m.get('mealStart','flexible')}–{m.get('mealEnd','')}"
+        for m in meals
+    ) or "No meals set."
+
+    commitment_lines = "\n".join(
+        f"- {c['commitmentName']} ({c.get('commitmentType','')}) {c.get('commitmentStart','')}-{c.get('commitmentEnd','')} on {c.get('days','') or c.get('specificDate','')}"
+        for c in commitments
+    ) or "No commitments."
+
+    sleep_line = f"Wake {sleep['wakeTime']}, sleep {sleep['sleepTime']}" if sleep else "No sleep schedule set."
+
+    today_blocks = schedule_context.get("blocks", [])
+    block_lines = "\n".join(
+        f"- {b.get('start','')}–{b.get('end','')} {b.get('label','')}"
+        for b in today_blocks
+        if b.get('type') not in ('sleep', 'buffer')
+    ) or "No schedule generated yet for today."
+
+    system_prompt = f"""You are Atlas AI, a friendly and practical scheduling assistant built into the Atlas daily planner app. Today is {today}.
+
+Here is the user's current data:
+
+SLEEP: {sleep_line}
+
+ACTIVE TASKS:
+{task_lines}
+
+MEALS:
+{meal_lines}
+
+COMMITMENTS:
+{commitment_lines}
+
+TODAY'S GENERATED SCHEDULE:
+{block_lines}
+
+Use this context to give personalized, specific scheduling advice. Reference their actual tasks and times. Be concise and actionable. If they ask to add or change something, explain what they should do in the app."""
+
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": message})
+
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -1321,7 +1426,7 @@ async def chat(request: dict, user_id: int = Depends(get_current_user)):
                 json={
                     "model": "claude-sonnet-4-6",
                     "max_tokens": 1000,
-                    "system": "You are Atlas AI, a friendly and practical scheduling assistant built into the Atlas daily planner app. Help the user manage their tasks, plan their day, and give scheduling advice. Be concise and actionable.",
+                    "system": system_prompt,
                     "messages": messages
                 },
                 timeout=30.0
@@ -1847,3 +1952,95 @@ async def sync_google_export(body: ScheduleSave, user_id: int = Depends(get_curr
     cur.close()
     conn.close()
     return {"message": "Pushed to Google Calendar", "created": created, "updated": updated, "skipped": skipped}
+
+# ── Weekly Email Report ──
+
+class EmailReportDayBody(BaseModel):
+    day: str
+
+@app.post("/settings/email-report-day")
+def save_email_report_day(body: EmailReportDayBody, user_id: int = Depends(get_current_user)):
+    valid_days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+    if body.day not in valid_days:
+        raise HTTPException(status_code=400, detail="Invalid day")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET email_report_day = %s WHERE id = %s", (body.day, user_id))
+    cur.execute(
+        """INSERT INTO settings (user_id, key, value) VALUES (%s, %s, %s)
+        ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value""",
+        (user_id, 'emailReportDay', body.day)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"message": "Email report day saved", "day": body.day}
+
+# ─── Weekly Email Cron Skeleton ───────────────────────────────────────────────
+
+CRON_SECRET = os.environ.get("CRON_SECRET", "")  # set this in Render env vars
+
+@app.post("/cron/weekly-email")
+async def weekly_email_cron(request: dict = {}):
+    # Verify the request is from our cron caller, not a random POST
+    secret = request.get("secret", "")
+    if CRON_SECRET and secret != CRON_SECRET:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    # Find all users whose email_report_day matches today
+    today_name = datetime.now().strftime("%A")  # e.g. "Sunday"
+    cur.execute(
+        "SELECT id, username, email, email_report_day FROM users WHERE email_report_day = %s",
+        (today_name,)
+    )
+    users = cur.fetchall()
+
+    results = []
+    for user in users:
+        user_id = user['id']
+
+        # Pull last 7 days of task history
+        cur.execute(
+            """SELECT taskName, category, estimated_duration, actual_duration, completion_status, completed_at
+            FROM task_history
+            WHERE user_id = %s AND completed_at >= (now() - interval '7 days')::text
+            ORDER BY completed_at DESC""",
+            (user_id,)
+        )
+        history = cur.fetchall()
+
+        # Compute basic stats
+        total = len(history)
+        completed = sum(1 for h in history if h['completion_status'] == 'Completed')
+        total_estimated = sum(h['estimated_duration'] or 0 for h in history)
+        total_actual = sum(h['actual_duration'] or 0 for h in history)
+
+        report = {
+            "user_id": user_id,
+            "username": user['username'],
+            "email": user['email'],
+            "email_report_day": user['email_report_day'],
+            "week_stats": {
+                "total_tasks": total,
+                "completed": completed,
+                "total_estimated_min": total_estimated,
+                "total_actual_min": total_actual,
+            },
+            "history_count": len(history),
+            # TODO: generate narrative with Claude once Resend is wired
+            # TODO: send via Resend API
+        }
+        results.append(report)
+
+    cur.close()
+    conn.close()
+
+    return {
+        "message": f"Weekly email cron ran for {today_name}",
+        "users_matched": len(results),
+        "reports": results  # remove this in prod — just for debugging
+    }
+

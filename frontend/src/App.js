@@ -3,6 +3,10 @@ import logo from './Atlas_Logo192.png';
 import './App.css';
 import { useTheme, getCategoryFromName, getEmojiForCategory } from './ThemeContext';
 import Onboarding from './Onboarding';
+import astronautWave from './assets/astronaut-wave.png';
+import astronautThink from './assets/astronaut-think.png';
+import astronautCheer from './assets/astronaut-cheer.png';
+import astronautAnalyze from './assets/astronaut-analyze.png';
 
 /* eslint-disable no-unused-vars */
 
@@ -146,6 +150,7 @@ function App() {
   const [aiMessages, setAiMessages] = useState([]);
   const [aiInput, setAiInput] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [astronautMood, setAstronautMood] = useState('wave'); // 'wave' | 'think' | 'cheer' | 'analyze'
 
   // ── Core data ──
   const [tasks, setTasks] = useState([]);
@@ -320,6 +325,8 @@ function App() {
   const [canvasSyncMessage, setCanvasSyncMessage] = useState('');
   const [googleStatus, setGoogleStatus] = useState({ connected: false });
   const [googleSyncMessage, setGoogleSyncMessage] = useState('');
+  const [emailReportDay, setEmailReportDay] = useState('Sunday');
+  const [savedEmailReportDay, setSavedEmailReportDay] = useState('Sunday');
 
   // ── Feedback form ──
   const [feedbackCategory, setFeedbackCategory] = useState('');
@@ -460,6 +467,10 @@ function App() {
           const types = data.notifyBlockTypes.split(',').filter(Boolean);
           setSavedNotifyTypes(types);
           setNotifyTypes(types);
+        }
+        if (data.emailReportDay) {
+          setEmailReportDay(data.emailReportDay);
+          setSavedEmailReportDay(data.emailReportDay);
         }
       });
 
@@ -1982,7 +1993,15 @@ function App() {
       .then((res) => res.json())
       .then(() => {
         setTasks(tasks.map((task) => task.id === taskId ? { ...task, actual_duration: Number(actualDuration), actual_difficulty: Number(actualDifficulty), completion_status: completionStatus } : task));
-        setFeedbackTaskId(null); setActualDuration(''); setActualDifficulty(5); setCompletionStatus(''); setManualStartTime('');
+        setFeedbackTaskId(null); 
+        if (completionStatus === 'Completed') {
+          setAstronautMood('cheer');
+          setTimeout(() => setAstronautMood('wave'), 3000);
+        }
+        setActualDuration(''); 
+        setActualDifficulty(5); 
+        setCompletionStatus(''); 
+        setManualStartTime('');
         setCompletionPercent(100); setCompletionTouched(false);
         authFetch(`${process.env.REACT_APP_API_URL}/history`).then((res) => res.json()).then(setHistory).catch((err) => console.error('Failed to reload history:', err));
       })
@@ -2627,17 +2646,35 @@ function App() {
   // ─────────────────────────────────────────────────────────────────────────────
 
   async function handleAiChat() {
-    if (!aiInput.trim() || aiLoading) return;
+    if (aiMessages.length === 0) {
+      setAstronautMood('wave');
+    }
+    if (!aiInput.trim() || aiLoading) {
+      return;
+    }
     const userMessage = aiInput.trim();
     setAiInput('');
     setAiMessages((prev) => [...prev, { role: 'user', content: userMessage }]);
     setAiLoading(true);
     try {
+      const todayBlocks = weekSchedule[selectedDay.toDateString()] || [];
       const response = await authFetch(`${process.env.REACT_APP_API_URL}/chat`, {
         method: 'POST',
-        body: JSON.stringify({ message: userMessage, history: aiMessages })
+        body: JSON.stringify({
+          message: userMessage,
+          history: aiMessages,
+          schedule_context: { blocks: todayBlocks }
+        })
       });
-      if (!response.ok) throw new Error('Chat failed');
+      if (response.status === 429) {
+        const data = await response.json();
+        setAiMessages((prev) => [...prev, { role: 'assistant', content: `⚠️ ${data.detail}` }]);
+        setAiLoading(false);
+        return;
+      }
+      if (!response.ok) {
+        throw new Error('Chat failed');
+      }
       const data = await response.json();
       setAiMessages((prev) => [...prev, { role: 'assistant', content: data.reply }]);
     } catch (err) {
@@ -3343,6 +3380,7 @@ function App() {
             )}
             <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>
               Atlas thinks this is: <strong style={{ color: 'var(--text-primary)' }}>{activeTaskType === 'deep' ? 'Deep Work' : 'Light Work'}</strong>
+              {hasConflict && <span style={{ color: '#e67e22', marginLeft: 6 }}>⚠️ overridden</span>}
             </p>
             <button type="button" className="btn-secondary"
               onClick={() => setUserOverrideType(activeTaskType === 'deep' ? 'light' : 'deep')}
@@ -4091,6 +4129,38 @@ function App() {
             </button>
           </div>
 
+          <div className="section-label">Weekly email report</div>
+          <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+              Choose which day you'd like to receive your weekly progress report.
+            </p>
+            <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Send report on</label>
+            <select value={emailReportDay} onChange={(e) => setEmailReportDay(e.target.value)}>
+              {DAYS.map((day) => (
+                <option key={day} value={day}>{day}</option>
+              ))}
+            </select>
+            <button
+              className="btn-primary"
+              type="button"
+              onClick={() => {
+                setSavedEmailReportDay(emailReportDay);
+                saveSetting('emailReportDay', emailReportDay);
+                authFetch(`${process.env.REACT_APP_API_URL}/settings/email-report-day`, {
+                  method: 'POST',
+                  body: JSON.stringify({ day: emailReportDay })
+                }).catch((err) => console.error('Failed to save email report day:', err));
+              }}
+            >
+              Save
+            </button>
+            {savedEmailReportDay && (
+              <p style={{ fontSize: 12, color: 'var(--brand)' }}>
+                Reports send on {savedEmailReportDay}s
+              </p>
+            )}
+          </div>
+
           <div className="section-label">Canvas</div>
           <div className="card" style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
             {canvasStatus.connected ? (
@@ -4230,60 +4300,95 @@ function App() {
         </div>
       )}
 
-      {showAiChat && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
-          onClick={() => setShowAiChat(false)}>
-          <div style={{ background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', padding: '20px 0 0', width: '100%', maxWidth: 480, height: '75vh', display: 'flex', flexDirection: 'column' }}
-            onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 20px 16px', borderBottom: '1px solid var(--border-color)' }}>
-              <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>✦</div>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>Atlas AI</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Your scheduling assistant</div>
-              </div>
-              <button type="button" onClick={() => setShowAiChat(false)}
-                style={{ marginLeft: 'auto', background: 'none', border: 'none', fontSize: 20, color: 'var(--text-muted)', padding: 4 }}>×</button>
-            </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 14, color: 'var(--text-secondary)', alignSelf: 'flex-start', maxWidth: '85%' }}>
-                Hi! I'm your Atlas assistant. I can help you add tasks, plan your day, and give scheduling advice. What do you need?
-              </div>
-              {aiMessages.map((msg, i) => (
-                <div key={i} style={{
-                  background: msg.role === 'user' ? 'var(--brand)' : 'var(--bg-surface-alt)',
-                  color: msg.role === 'user' ? 'white' : 'var(--text-secondary)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 14px',
-                  fontSize: 14,
-                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  maxWidth: '85%',
-                }}>
-                  {msg.content}
+      {showAiChat && (() => {
+        const mascot = aiLoading
+          ? astronautThink
+          : astronautMood === 'cheer'
+            ? astronautCheer
+            : astronautMood === 'analyze'
+              ? astronautAnalyze
+              : astronautWave;
+
+        return (
+          <div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            onClick={() => setShowAiChat(false)}
+          >
+            <div
+              style={{ background: 'var(--bg-surface)', borderRadius: 'var(--radius-lg) var(--radius-lg) 0 0', padding: '0 0 0', width: '100%', maxWidth: 480, height: '80vh', display: 'flex', flexDirection: 'column' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+
+              {/* Mascot hero area */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 16, paddingBottom: 8, borderBottom: '1px solid var(--border-color)', position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowAiChat(false)}
+                  style={{ position: 'absolute', right: 16, top: 12, background: 'none', border: 'none', fontSize: 20, color: 'var(--text-muted)', padding: 4 }}
+                >×</button>
+                <img
+                  src={mascot}
+                  alt="Atlas AI mascot"
+                  style={{
+                    width: 88,
+                    height: 88,
+                    objectFit: 'contain',
+                    animation: aiLoading ? 'astronaut-think 1.2s ease-in-out infinite' : 'astronaut-float 3s ease-in-out infinite',
+                    filter: 'drop-shadow(0 4px 12px rgba(0,0,0,0.12))',
+                  }}
+                />
+                <div style={{ fontWeight: 700, fontSize: 15, marginTop: 6 }}>Atlas AI</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                  {aiLoading ? 'Thinking...' : 'Your scheduling assistant'}
                 </div>
-              ))}
-              {aiLoading && (
-                <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 14, color: 'var(--text-muted)', alignSelf: 'flex-start' }}>
-                  Thinking...
-                </div>
-              )}
-            </div>
-            <div style={{ padding: '12px 16px 28px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
-              <input
-                type="text"
-                placeholder="Ask me anything about your schedule..."
-                style={{ flex: 1 }}
-                value={aiInput}
-                onChange={(e) => setAiInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) handleAiChat(); }}
-              />
-              <button className="btn-primary" type="button" style={{ width: 'auto', padding: '0 16px' }}
-                onClick={handleAiChat} disabled={aiLoading}>
-                Send
-              </button>
+              </div>
+
+              {/* Message thread */}
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {aiMessages.length === 0 && (
+                  <div style={{ background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-md)', padding: '12px 14px', fontSize: 14, color: 'var(--text-secondary)', alignSelf: 'flex-start', maxWidth: '85%' }}>
+                    Hi! I'm your Atlas assistant 🚀 I can help you plan your day, manage tasks, and give scheduling advice. What do you need?
+                  </div>
+                )}
+                {aiMessages.map((msg, i) => (
+                  <div key={i} style={{
+                    background: msg.role === 'user' ? 'var(--brand)' : 'var(--bg-surface-alt)',
+                    color: msg.role === 'user' ? 'white' : 'var(--text-secondary)',
+                    borderRadius: 'var(--radius-md)',
+                    padding: '12px 14px',
+                    fontSize: 14,
+                    alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                    maxWidth: '85%',
+                  }}>
+                    {msg.content}
+                  </div>
+                ))}
+              </div>
+
+              {/* Input row */}
+              <div style={{ padding: '12px 16px 28px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="Ask me anything about your schedule..."
+                  style={{ flex: 1 }}
+                  value={aiInput}
+                  onChange={(e) => setAiInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !aiLoading) handleAiChat(); }}
+                />
+                <button
+                  className="btn-primary"
+                  type="button"
+                  style={{ width: 'auto', padding: '0 16px' }}
+                  onClick={handleAiChat}
+                  disabled={aiLoading}
+                >
+                  Send
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Bottom nav */}
       <div className="bottom-nav">
@@ -4296,15 +4401,24 @@ function App() {
           <span className={`nav-item-label${activeTab === 'tasks' ? ' active' : ''}`}>Tasks</span>
         </button>
         <div className="nav-fab-wrap">
-          <button type="button" className="nav-fab"
+          <button
+            type="button"
+            className="nav-fab"
             onClick={() => {
               if (isPaid || betaAccess) {
+                setAstronautMood('analyze');
                 setShowAiChat(true);
               } else {
                 setShowAiLockedModal(true);
               }
-            }}>
-            ✦
+            }}
+            style={{ padding: 0, overflow: 'hidden', background: 'transparent', border: 'none', boxShadow: 'none' }}
+          >
+            <img
+              src={astronautWave}
+              alt="Atlas AI"
+              style={{ width: 52, height: 52, objectFit: 'contain', filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.18))' }}
+            />
           </button>
         </div>
         <button type="button" className="nav-item" onClick={() => setActiveTab('availability')}>
