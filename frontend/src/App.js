@@ -382,6 +382,14 @@ function App() {
     if (!token) {
       return;
     }
+    fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/auth/me`, null).then((data) => {
+      if (data) {
+        setIsPaid(data.is_paid || false);
+        setBetaAccess(data.beta_access ?? true);
+        setUsername(data.username);
+        localStorage.setItem('atlas_username', data.username);
+      }
+    });
     fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/tasks`, []).then(setTasks);
 
     fetchJsonOrLogout(`${process.env.REACT_APP_API_URL}/history`, []).then(setHistory);
@@ -3461,6 +3469,17 @@ function App() {
                   </span>
                   <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-pill)', padding: '2px 8px' }}>
                     {task.duration} min
+                    {(() => {
+                      const { multiplier, source } = getTaskMultiplier(task);
+                      if (source === 'none' || multiplier === 1) return null;
+                      const adjusted = Math.round(Number(task.duration) * multiplier);
+                      const diff = adjusted - Number(task.duration);
+                      return (
+                        <span style={{ marginLeft: 4, color: diff > 0 ? '#e67e22' : 'var(--brand)' }}>
+                          → {adjusted} min
+                        </span>
+                      );
+                    })()}
                   </span>
                   {task.category && (
                     <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-surface-alt)', borderRadius: 'var(--radius-pill)', padding: '2px 8px' }}>

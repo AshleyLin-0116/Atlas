@@ -2,16 +2,15 @@ name: Weekly Email Cron
 
 on:
   schedule:
-    - cron: '0 14 * * *'
-  workflow_dispatch:
+    - cron: '0 12 * * *'  # Every day at 12pm UTC
+  workflow_dispatch:       # Allow manual trigger from GitHub Actions tab
 
 jobs:
-  trigger:
+  send-weekly-email:
     runs-on: ubuntu-latest
     steps:
-      - name: Call weekly-email endpoint
+      - name: Trigger weekly email endpoint
         run: |
-          curl -s -X POST \
+          curl -X POST https://atlas-backend-476l.onrender.com/cron/weekly-email \
             -H "Content-Type: application/json" \
-            -d "{\"secret\": \"${{ secrets.CRON_SECRET }}\"}" \
-            https://atlas-backend-476l.onrender.com/cron/weekly-email
+            -d '{"secret": "${{ secrets.CRON_SECRET }}"}'

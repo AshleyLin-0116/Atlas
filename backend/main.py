@@ -724,6 +724,20 @@ async def forgot_username(body: dict):
         )
     return {"message": "If that email exists, your username has been sent"}
 
+@app.get("/auth/me")
+def get_me(user_id: int = Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, is_paid, beta_access FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    return {
+        "username": user["username"],
+        "is_paid": bool(user["is_paid"]),
+        "beta_access": BETA_MODE or bool(user["beta_access"])
+    }
+
 @app.put("/auth/update-account")
 def update_account(body: dict, user_id: int = Depends(get_current_user)):
     current_password = body.get("current_password", "").strip()
@@ -1279,6 +1293,16 @@ def save_setting(setting: Setting, user_id: int = Depends(get_current_user)):
 async def parse_task(request: dict, user_id: int = Depends(get_current_user)):
     import json
     from datetime import date
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT is_paid, beta_access FROM users WHERE id = %s", (user_id,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not (BETA_MODE or bool(user["is_paid"]) or bool(user["beta_access"])):
+        raise HTTPException(status_code=403, detail="AI features require a paid account")
+
     today = date.today().isoformat()
     try:
         async with httpx.AsyncClient() as client:
