@@ -7,7 +7,6 @@ import astronautWave from './assets/astronaut-wave.png';
 import astronautThink from './assets/astronaut-think.png';
 import astronautCheer from './assets/astronaut-cheer.png';
 import astronautAnalyze from './assets/astronaut-analyze.png';
-import ReactMarkdown from 'react-markdown';
 
 /* eslint-disable no-unused-vars */
 
@@ -107,6 +106,37 @@ function ProgressBar({ estimated, actual }) {
           ? `Took ${actual - estimated} min longer than estimated`
           : `Finished ${estimated - actual} min under estimate`}
       </p>
+    </div>
+  );
+}
+
+// ─── Message Format ─────────────────────────────────────────────────────────────
+function SimpleMarkdown({ content }) {
+  const lines = content.split('\n');
+  return (
+    <div>
+      {lines.map((line, i) => {
+        // Bold: **text**
+        const parts = line.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
+          if (part.startsWith('**') && part.endsWith('**')) {
+            return <strong key={j}>{part.slice(2, -2)}</strong>;
+          }
+          return part;
+        });
+        // Bullet point
+        if (line.startsWith('- ') || line.startsWith('* ')) {
+          return <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 2 }}><span>•</span><span>{parts.slice(1)}</span></div>;
+        }
+        // Numbered list
+        if (/^\d+\.\s/.test(line)) {
+          return <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 2 }}><span>{line.match(/^\d+/)[0]}.</span><span>{parts.slice(1)}</span></div>;
+        }
+        // Empty line
+        if (line.trim() === '') {
+          return <div key={i} style={{ height: 6 }} />;
+        }
+        return <div key={i} style={{ marginBottom: 2 }}>{parts}</div>;
+      })}
     </div>
   );
 }
@@ -4407,7 +4437,7 @@ function App() {
                     maxWidth: '85%',
                   }}>
                     {msg.role === 'assistant' ? (
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <SimpleMarkdown content={msg.content} />
                     ) : msg.content}
                   </div>
                 ))}
