@@ -7,6 +7,7 @@ import astronautWave from './assets/astronaut-wave.png';
 import astronautThink from './assets/astronaut-think.png';
 import astronautCheer from './assets/astronaut-cheer.png';
 import astronautAnalyze from './assets/astronaut-analyze.png';
+import ReactMarkdown from 'react-markdown';
 
 /* eslint-disable no-unused-vars */
 
@@ -4405,7 +4406,9 @@ function App() {
                     alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
                     maxWidth: '85%',
                   }}>
-                    {msg.content}
+                    {msg.role === 'assistant' ? (
+                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                    ) : msg.content}
                   </div>
                 ))}
               </div>
