@@ -1,4 +1,3 @@
-```markdown
 # Atlas
 
 Atlas is a full-stack AI-powered daily scheduler that learns from your behavior over time. It generates an optimized schedule each day based on your tasks, deadlines, and availability then refines its estimates as it observes how long tasks actually take, when you're most productive, and how your day unfolds in practice.
@@ -487,4 +486,3 @@ All endpoints except `/auth/register`, `/auth/login`, `/auth/forgot-password`, `
 - **Disruption recovery**: detect when the day goes off-plan (late wake, skipped meal) and regenerate the remaining schedule in real time
 - **Per-day availability**: different meals, sleep times, and commitments for each day of the week
 - **Optimization algorithm research**: the current scheduler is greedy (first-fit). A constraint satisfaction or integer programming approach could find globally better schedules, especially under tight availability constraints
-```
