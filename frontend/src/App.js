@@ -3117,6 +3117,14 @@ function App() {
                     {isToday(selectedDay) ? ' · Today' : ''}
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('progress')}
+                  style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', padding: '4px 8px', color: 'var(--text-muted)' }}
+                  title="View progress"
+                >
+                  📊
+                </button>
               </div>
             </div>
 
@@ -4522,10 +4530,6 @@ function App() {
             />
           </button>
         </div>
-        <button type="button" className="nav-item" onClick={() => setActiveTab('progress')}>
-          <span className={`nav-item-icon${activeTab === 'progress' ? ' active' : ''}`}>📊</span>
-          <span className={`nav-item-label${activeTab === 'progress' ? ' active' : ''}`}>Progress</span>
-        </button>
         <button type="button" className="nav-item" onClick={() => setActiveTab('availability')}>
           <span className={`nav-item-icon${activeTab === 'availability' ? ' active' : ''}`}>🗓</span>
           <span className={`nav-item-label${activeTab === 'availability' ? ' active' : ''}`}>Availability</span>
