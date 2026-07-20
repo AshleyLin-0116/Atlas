@@ -175,6 +175,8 @@ Backend — FastAPI (Render)
             - Assignment and class schedule import
 ```
 
+![Atlas Architecture](./atlas-architecture.svg)
+
 ### Component Responsibilities
 
 - **Frontend (React)**: All business logic lives here. The schedule generator, priority scoring formula, and duration adjustment engine are pure JavaScript functions that run in the browser. The backend is never called for computation, only for persistence.
