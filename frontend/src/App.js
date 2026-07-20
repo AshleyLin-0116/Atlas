@@ -750,7 +750,7 @@ function App() {
 
     const typeToCategory = { break: 'free', buffer: 'free', shower: 'free', study: 'task', peak: 'task', commute: 'commute', meal: 'meal', commitment: 'commitment', sleep: 'sleep' };
     dayScheduleBlocks.forEach((block) => {
-      if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep', 'meal', 'commitment', 'commute'].includes(block.type)) {
+      if (['study', 'peak', 'break', 'buffer', 'shower', 'sleep', 'meal', 'commitment', 'commute', 'free'].includes(block.type)) {
         blocks.push({
           label: block.label,
           start: block.start,
