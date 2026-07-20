@@ -1751,7 +1751,30 @@ function App() {
       }
     }
     merged.forEach((block) => { block.generatedForDate = todayStr; });
-    return merged;
+
+    // ── Fill remaining gaps with Free time blocks ──────────────────────────
+    const filledMerged = [];
+    for (let i = 0; i < merged.length; i++) {
+      filledMerged.push(merged[i]);
+      if (i < merged.length - 1) {
+        const thisEnd = merged[i].end;
+        const nextStart = merged[i + 1].start;
+        if (nextStart > thisEnd) {
+          const gapMinutes = toMinutes(nextStart) - toMinutes(thisEnd);
+          if (gapMinutes > savedTransitionGap) {
+            filledMerged.push({
+              start: thisEnd,
+              end: nextStart,
+              label: 'Free time',
+              type: 'free',
+              generatedForDate: todayStr,
+            });
+          }
+        }
+      }
+    }
+
+    return filledMerged;
   }
 
   function generateScheduleSummary(schedule) {
