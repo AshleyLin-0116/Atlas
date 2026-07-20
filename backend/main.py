@@ -1437,7 +1437,7 @@ COMMITMENTS:
 TODAY'S GENERATED SCHEDULE:
 {block_lines}
 
-Use this context to give personalized, specific scheduling advice. Reference their actual tasks and times. Be concise and actionable. If they ask to add or change something, explain what they should do in the app."""
+Use this context to give personalized, specific scheduling advice. Reference their actual tasks and times. Be concise and actionable. If they ask to add or change something, explain what they should do in the app. Write in plain conversational text only — no markdown headers, no horizontal rules, no bullet symbols, no bold. Use plain sentences and line breaks instead."""
 
     messages = [{"role": m["role"], "content": m["content"]} for m in history]
     messages.append({"role": "user", "content": message})
