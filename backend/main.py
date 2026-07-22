@@ -2135,7 +2135,8 @@ async def weekly_email_cron(request: dict = {}):
                                     f"Task breakdown:\n{task_lines}\n\n"
                                     "Write 2–3 short, encouraging paragraphs. Mention specific tasks by name where possible. "
                                     "Note patterns (over/underestimation, strong categories). End with one actionable tip. "
-                                    "Tone: warm, direct, like a coach. No markdown, plain text only."
+                                    "Tone: warm, direct, like a coach. Use short paragraphs separated by blank lines. "
+                                    "You may use '- ' bullet points for lists. No headers, no bold, no horizontal rules."
                                 )
                             }]
                         },

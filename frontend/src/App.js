@@ -114,28 +114,33 @@ function ProgressBar({ estimated, actual }) {
 function SimpleMarkdown({ content }) {
   const lines = content.split('\n');
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
       {lines.map((line, i) => {
-        // Bold: **text**
-        const parts = line.split(/(\*\*[^*]+\*\*)/g).map((part, j) => {
-          if (part.startsWith('**') && part.endsWith('**')) {
-            return <strong key={j}>{part.slice(2, -2)}</strong>;
-          }
-          return part;
-        });
-        // Bullet point
+        const parts = line.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+          part.startsWith('**') && part.endsWith('**')
+            ? <strong key={j}>{part.slice(2, -2)}</strong>
+            : part
+        );
         if (line.startsWith('- ') || line.startsWith('* ')) {
-          return <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 2 }}><span>•</span><span>{parts.slice(1)}</span></div>;
+          return (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 4, paddingLeft: 4 }}>
+              <span style={{ flexShrink: 0, marginTop: 1 }}>•</span>
+              <span>{parts.slice(1)}</span>
+            </div>
+          );
         }
-        // Numbered list
         if (/^\d+\.\s/.test(line)) {
-          return <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 2 }}><span>{line.match(/^\d+/)[0]}.</span><span>{parts.slice(1)}</span></div>;
+          return (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 4, paddingLeft: 4 }}>
+              <span style={{ flexShrink: 0 }}>{line.match(/^\d+/)[0]}.</span>
+              <span>{parts.slice(1)}</span>
+            </div>
+          );
         }
-        // Empty line
         if (line.trim() === '') {
-          return <div key={i} style={{ height: 6 }} />;
+          return <div key={i} style={{ height: 10 }} />;
         }
-        return <div key={i} style={{ marginBottom: 2 }}>{parts}</div>;
+        return <div key={i} style={{ marginBottom: 6, lineHeight: '1.5' }}>{parts}</div>;
       })}
     </div>
   );
