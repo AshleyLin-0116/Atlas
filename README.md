@@ -5,7 +5,8 @@ Atlas is a full-stack AI-powered daily scheduler that learns from your behavior 
 The core idea: most scheduling tools treat your time as static. Atlas treats it as dynamic, adjusting to what actually happens and getting more accurate with each completed task.
 
 🔗 **Live App:** [atlas-delta-sable.vercel.app](https://atlas-delta-sable.vercel.app)
-🎥 **Demo Video:** coming soon
+
+<!-- MEDIA: short screen recording (~30–60s) showing the full app loop — add tasks, generate schedule, complete a task with feedback, see the adjustment reflected -->
 
 ---
 
@@ -17,6 +18,9 @@ Students consistently underestimate how long tasks take, schedule work during lo
 
 ## What It Does
 
+<!-- MEDIA: screenshot of a generated schedule with color-coded blocks, emoji icons, deep work labels, and commute blocks visible -->
+<img src="Main_Schedule_View.png" alt="Weekly Schedule View" class="Weekly-Schedule-View">
+
 - **Generates daily schedules** → fills your available time with tasks, breaks, meals, and commitments automatically
 - **Prioritizes tasks dynamically** → ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
 - **Classifies deep vs. light work** → alternates cognitively demanding and lighter tasks to preserve focus
@@ -27,7 +31,21 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **Surfaces AI duration estimates** → shows adjusted duration on each task card before scheduling
 - **Tracks cumulative partial progress** → logs duration across multiple partial sessions and sums them on final completion
 - **Parses tasks from natural language** → describe a task in plain English and Atlas fills the form automatically using Claude AI
+
+<video class="Natural-Language-Task-Parsing-screen-recording" controls>
+  <source src="Natural_Language_Task_Parsing.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 - **AI chat assistant** → ask Atlas AI anything about your schedule; it responds with full context of your tasks, meals, commitments, and today's generated blocks
+
+<!-- MEDIA: screenshot of the AI chat panel (Pocket Astronaut mascot visible, a few message exchanges about the schedule) -->
+<img src="AI_Chat.png" alt="AI Chat" class="AI-Chat">
+<video class="AI-Chat-screen-recording" controls>
+  <source src="AI_Chat.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
 - **Enforces task dependencies** → blocked tasks are excluded from the schedule until their prerequisites are complete
 - **Supports recurring tasks** → weekly recurring tasks generate child instances automatically for each scheduled day
 - **Commitment repeat-until options** → commitments can repeat forever, until a date, or a fixed number of times
@@ -36,11 +54,19 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **Push notifications** → get notified before each scheduled block starts, with configurable lead time and block type filters
 - **Weekly email reports** → receive a personalized weekly summary with stats and a Claude-generated narrative every week
 - **Guided onboarding** → new users complete a three-step setup flow (sleep → meal → task) before reaching the main app
+
+<img src="Onboarding1.png" alt="Onboarding Flow" class="Onboarding">
+<img src="Onboarding2.png" alt="Onboarding Flow" class="Onboarding">
+
 - **Collects behavioral feedback** → after each task, logs actual duration, actual difficulty, and completion status
 - **Tracks estimation accuracy** → compares estimated vs. actual duration per task and by category
 - **Identifies productive time patterns** → analyzes which time periods have the highest task completion rates
 - **Surfaces smart suggestions** → detects overdue tasks, consistent underestimation patterns, and peak productivity windows
 - **Weekly analytics** → summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
+
+<!-- MEDIA: screenshot of the analytics dashboard — weekly stats, category breakdown, productive time chart, smart suggestions -->
+<img src="Analytics_Dashboard.png" alt="Analytics Dashboard" class="Analytics-Dashboard">
+
 - **Schedule flagging** → flag any block with a note describing what you'd like changed
 - **Full account management** → update username, email, or password; forgot password/username via email; delete account
 - **Persists everything** → all tasks, history, settings, and schedules saved to PostgreSQL
