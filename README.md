@@ -19,7 +19,7 @@ Students consistently underestimate how long tasks take, schedule work during lo
 ## What It Does
 
 <!-- MEDIA: screenshot of a generated schedule with color-coded blocks, emoji icons, deep work labels, and commute blocks visible -->
-<img src="Main_Schedule_View.png" alt="Weekly Schedule View" class="Weekly-Schedule-View">
+<img src="Main_Schedule_View.png" alt="Weekly Schedule View" class="Weekly-Schedule-View" width="600">
 
 - **Generates daily schedules** → fills your available time with tasks, breaks, meals, and commitments automatically
 - **Prioritizes tasks dynamically** → ranks by urgency, importance, personal priority, and difficulty using a weighted scoring formula
@@ -40,7 +40,7 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **AI chat assistant** → ask Atlas AI anything about your schedule; it responds with full context of your tasks, meals, commitments, and today's generated blocks
 
 <!-- MEDIA: screenshot of the AI chat panel (Pocket Astronaut mascot visible, a few message exchanges about the schedule) -->
-<img src="AI_Chat.png" alt="AI Chat" class="AI-Chat">
+<img src="AI_Chat.png" alt="AI Chat" class="AI-Chat" width="600">
 <video class="AI-Chat-screen-recording" controls>
   <source src="AI_Chat.mp4" type="video/mp4">
   Your browser does not support the video tag.
@@ -55,8 +55,8 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **Weekly email reports** → receive a personalized weekly summary with stats and a Claude-generated narrative every week
 - **Guided onboarding** → new users complete a three-step setup flow (sleep → meal → task) before reaching the main app
 
-<img src="Onboarding1.png" alt="Onboarding Flow" class="Onboarding">
-<img src="Onboarding2.png" alt="Onboarding Flow" class="Onboarding">
+<img src="Onboarding1.png" alt="Onboarding Flow" class="Onboarding" width="600">
+<img src="Onboarding2.png" alt="Onboarding Flow" class="Onboarding" width="600">
 
 - **Collects behavioral feedback** → after each task, logs actual duration, actual difficulty, and completion status
 - **Tracks estimation accuracy** → compares estimated vs. actual duration per task and by category
@@ -65,7 +65,7 @@ Students consistently underestimate how long tasks take, schedule work during lo
 - **Weekly analytics** → summarizes the last 7 days of task activity, time spent, and estimation accuracy by category
 
 <!-- MEDIA: screenshot of the analytics dashboard — weekly stats, category breakdown, productive time chart, smart suggestions -->
-<img src="Analytics_Dashboard.png" alt="Analytics Dashboard" class="Analytics-Dashboard">
+<img src="Analytics_Dashboard.png" alt="Analytics Dashboard" class="Analytics-Dashboard" width="600">
 
 - **Schedule flagging** → flag any block with a note describing what you'd like changed
 - **Full account management** → update username, email, or password; forgot password/username via email; delete account
