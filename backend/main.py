@@ -536,9 +536,6 @@ class CanvasCredentials(BaseModel):
     canvas_domain: str
     access_token: str
 
-class GoogleAuthCode(BaseModel):
-    code: str
-
 # ─── API HELPERS ───────────────────────────────────────────────────────────────────
 
 async def canvas_get(domain: str, token: str, path: str, params: dict = None):
